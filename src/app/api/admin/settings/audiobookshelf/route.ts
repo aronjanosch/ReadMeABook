@@ -12,7 +12,7 @@ export async function PUT(request: NextRequest) {
     return requireAdmin(req, async () => {
       try {
         const body = await request.json();
-        const { serverUrl, apiToken, libraryId } = body;
+        const { serverUrl, apiToken, libraryId, triggerScanAfterImport } = body;
 
         const { getConfigService } = await import('@/lib/services/config.service');
         const configService = getConfigService();
@@ -21,6 +21,7 @@ export async function PUT(request: NextRequest) {
         const updates: ConfigUpdate[] = [
           { key: 'audiobookshelf.server_url', value: serverUrl || '' },
           { key: 'audiobookshelf.library_id', value: libraryId || '' },
+          { key: 'audiobookshelf.trigger_scan_after_import', value: triggerScanAfterImport === true ? 'true' : 'false' },
         ];
 
         // Only update API token if it's not the masked placeholder

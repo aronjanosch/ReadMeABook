@@ -13,7 +13,8 @@ interface AudiobookshelfStepProps {
   absUrl: string;
   absApiToken: string;
   absLibraryId: string;
-  onUpdate: (field: string, value: string) => void;
+  absTriggerScanAfterImport: boolean;
+  onUpdate: (field: string, value: string | boolean) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -28,6 +29,7 @@ export function AudiobookshelfStep({
   absUrl,
   absApiToken,
   absLibraryId,
+  absTriggerScanAfterImport,
   onUpdate,
   onNext,
   onBack,
@@ -224,6 +226,28 @@ export function AudiobookshelfStep({
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Select the library containing your audiobooks
             </p>
+          </div>
+        )}
+
+        {libraries.length > 0 && (
+          <div className="space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={absTriggerScanAfterImport}
+                onChange={(e) => onUpdate('absTriggerScanAfterImport', e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+              />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Trigger library scan after import
+                </span>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Only enable this if you have Audiobookshelf's filesystem watcher (automatic scanning) disabled.
+                  Most users should leave this unchecked and rely on Audiobookshelf's built-in automatic detection.
+                </p>
+              </div>
+            </label>
           </div>
         )}
       </div>

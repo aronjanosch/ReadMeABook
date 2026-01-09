@@ -52,6 +52,12 @@ jobs:
             org.opencontainers.image.description=All-in-one audiobook request and automation system (PostgreSQL + Redis + App)
             org.opencontainers.image.vendor=ReadMeABook
 
+      - name: Capture version information
+        id: version
+        run: |
+          echo "git_commit=$(git rev-parse --short=7 HEAD)" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
+
       - name: Build and push unified Docker image
         uses: docker/build-push-action@v5
         with:
@@ -63,6 +69,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            GIT_COMMIT=${{ steps.version.outputs.git_commit }}
+            BUILD_DATE=${{ steps.version.outputs.build_date }}
 
       - name: Generate deployment instructions
         if: github.event_name != 'pull_request'

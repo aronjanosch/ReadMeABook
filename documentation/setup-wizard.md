@@ -17,7 +17,7 @@
 
 1. Welcome - Intro screen
 2. Admin Account - Create admin user
-3. Plex - Server URL, OAuth, library selection
+3. Plex (or Audiobookshelf) - Server URL, auth, library selection, filesystem scan trigger toggle
 4. Prowlarr - URL, API key, indexer selection with priorities (1-25), seeding time, RSS monitoring
 5. Download Client - qBittorrent/Transmission config
 6. Paths - Download + media directories with validation

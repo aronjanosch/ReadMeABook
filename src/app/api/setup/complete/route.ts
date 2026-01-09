@@ -188,6 +188,13 @@ export async function POST(request: NextRequest) {
           create: { key: 'plex_machine_identifier', value: machineIdentifier },
         });
       }
+
+      // Save trigger_scan_after_import setting
+      await prisma.configuration.upsert({
+        where: { key: 'plex.trigger_scan_after_import' },
+        update: { value: plex.trigger_scan_after_import === true ? 'true' : 'false' },
+        create: { key: 'plex.trigger_scan_after_import', value: plex.trigger_scan_after_import === true ? 'true' : 'false' },
+      });
     } else {
       // Audiobookshelf configuration
       await prisma.configuration.upsert({
@@ -207,6 +214,13 @@ export async function POST(request: NextRequest) {
         where: { key: 'audiobookshelf.library_id' },
         update: { value: audiobookshelf.library_id },
         create: { key: 'audiobookshelf.library_id', value: audiobookshelf.library_id },
+      });
+
+      // Save trigger_scan_after_import setting
+      await prisma.configuration.upsert({
+        where: { key: 'audiobookshelf.trigger_scan_after_import' },
+        update: { value: audiobookshelf.trigger_scan_after_import === true ? 'true' : 'false' },
+        create: { key: 'audiobookshelf.trigger_scan_after_import', value: audiobookshelf.trigger_scan_after_import === true ? 'true' : 'false' },
       });
 
       // OIDC configuration (if enabled)

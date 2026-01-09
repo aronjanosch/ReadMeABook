@@ -12,7 +12,7 @@ export async function PUT(request: NextRequest) {
   return requireAuth(request, async (req: AuthenticatedRequest) => {
     return requireAdmin(req, async () => {
       try {
-        const { url, token, libraryId } = await request.json();
+        const { url, token, libraryId, triggerScanAfterImport } = await request.json();
 
     if (!url || !token || !libraryId) {
       return NextResponse.json(
@@ -41,6 +41,13 @@ export async function PUT(request: NextRequest) {
       where: { key: 'plex_audiobook_library_id' },
       update: { value: libraryId },
       create: { key: 'plex_audiobook_library_id', value: libraryId },
+    });
+
+    // Save trigger_scan_after_import setting
+    await prisma.configuration.upsert({
+      where: { key: 'plex.trigger_scan_after_import' },
+      update: { value: triggerScanAfterImport === true ? 'true' : 'false' },
+      create: { key: 'plex.trigger_scan_after_import', value: triggerScanAfterImport === true ? 'true' : 'false' },
     });
 
     // Fetch and save machine identifier (for server-specific access tokens)

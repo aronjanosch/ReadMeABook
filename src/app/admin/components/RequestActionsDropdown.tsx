@@ -8,7 +8,9 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { InteractiveTorrentSearchModal } from '@/components/requests/InteractiveTorrentSearchModal';
+import { useSmartDropdownPosition } from '@/hooks/useSmartDropdownPosition';
 
 export interface RequestActionsDropdownProps {
   request: {
@@ -37,7 +39,7 @@ export function RequestActionsDropdown({
 }: RequestActionsDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showInteractiveSearch, setShowInteractiveSearch] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { containerRef, dropdownRef, positionAbove, style } = useSmartDropdownPosition(isOpen);
 
   // Determine available actions based on status
   const canSearch = ['pending', 'failed', 'awaiting_search'].includes(request.status);
@@ -104,27 +106,13 @@ export function RequestActionsDropdown({
     }
   };
 
-  return (
-    <div className="relative" ref={dropdownRef}>
-      {/* Three-dot menu button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        disabled={isLoading}
-        className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        title="Actions"
-      >
-        <svg
-          className="w-5 h-5 text-gray-600 dark:text-gray-400"
-          fill="currentColor"
-          viewBox="0 0 20 20"
-        >
-          <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-        </svg>
-      </button>
-
-      {/* Dropdown menu */}
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 rounded-lg shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-50">
+  // Dropdown menu content (rendered via portal)
+  const dropdownMenu = isOpen && style && (
+    <div
+      ref={dropdownRef}
+      style={style}
+      className="w-56 rounded-lg shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-50 max-h-[calc(100vh-2rem)] overflow-y-auto"
+    >
           <div className="py-1" role="menu">
             {/* Manual Search */}
             {canSearch && (
@@ -284,7 +272,30 @@ export function RequestActionsDropdown({
             )}
           </div>
         </div>
-      )}
+  );
+
+  return (
+    <>
+      {/* Three-dot menu button */}
+      <div className="relative" ref={containerRef}>
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          disabled={isLoading}
+          className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Actions"
+        >
+          <svg
+            className="w-5 h-5 text-gray-600 dark:text-gray-400"
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Dropdown menu (rendered via portal) */}
+      {typeof window !== 'undefined' && dropdownMenu && createPortal(dropdownMenu, document.body)}
 
       {/* Interactive Search Modal */}
       <InteractiveTorrentSearchModal
@@ -296,6 +307,6 @@ export function RequestActionsDropdown({
           author: request.author,
         }}
       />
-    </div>
+    </>
   );
 }

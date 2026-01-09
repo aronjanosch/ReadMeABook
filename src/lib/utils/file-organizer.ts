@@ -96,6 +96,8 @@ export class FileOrganizer {
 
       // Check for chapter merging if multiple files
       if (audioFiles.length > 1) {
+        await logger?.info(`Multiple audio files detected (${audioFiles.length} files) - checking chapter merge settings...`);
+
         try {
           const chapterMergingConfig = await prisma.configuration.findUnique({
             where: { key: 'chapter_merging_enabled' },
@@ -103,72 +105,88 @@ export class FileOrganizer {
 
           const chapterMergingEnabled = chapterMergingConfig?.value === 'true';
 
-          if (chapterMergingEnabled) {
+          if (!chapterMergingEnabled) {
+            await logger?.info(`Chapter merging disabled in settings - organizing ${audioFiles.length} files individually`);
+          } else {
+            await logger?.info(`Chapter merging enabled - analyzing files...`);
+
             // Build full paths to source files
             const sourceFilePaths = audioFiles.map((audioFile) =>
               isFile ? downloadPath : path.join(downloadPath, audioFile)
             );
 
-            const isChapterDownload = await detectChapterFiles(sourceFilePaths);
+            const isChapterDownload = await detectChapterFiles(sourceFilePaths, logger ?? undefined);
 
             if (isChapterDownload) {
-              await logger?.info(`Detected ${audioFiles.length} chapter files, attempting merge...`);
-
               // Check disk space
               const estimatedSize = await estimateOutputSize(sourceFilePaths);
               const availableSpace = await checkDiskSpace(this.tempDir);
 
               if (availableSpace !== null && availableSpace < estimatedSize) {
-                await logger?.warn(`Insufficient disk space for merge (need ${Math.round(estimatedSize / 1024 / 1024)}MB, have ${Math.round(availableSpace / 1024 / 1024)}MB). Skipping merge.`);
+                await logger?.warn(`Insufficient disk space for merge (need ${Math.round(estimatedSize / 1024 / 1024)}MB, have ${Math.round(availableSpace / 1024 / 1024)}MB). Organizing files individually.`);
               } else {
+                // Log disk space check passed
+                if (availableSpace !== null) {
+                  await logger?.info(`Disk space check passed: ${Math.round(availableSpace / 1024 / 1024)}MB available, ${Math.round(estimatedSize / 1024 / 1024)}MB needed`);
+                }
+
                 // Analyze and order chapter files
                 const chapters = await analyzeChapterFiles(sourceFilePaths, logger ?? undefined);
 
-                // Create output path in temp directory
-                const outputFilename = `${this.sanitizePath(audiobook.title)}.m4b`;
-                const outputPath = path.join(this.tempDir, outputFilename);
+                // Validate that we have valid ordering
+                if (chapters.length === 0) {
+                  await logger?.warn(`Chapter analysis failed: No valid chapters found. Organizing files individually.`);
+                } else {
+                  // Create output path in temp directory
+                  const outputFilename = `${this.sanitizePath(audiobook.title)}.m4b`;
+                  const outputPath = path.join(this.tempDir, outputFilename);
 
-                // Perform merge
-                const mergeResult = await mergeChapters(
-                  chapters,
-                  {
-                    title: audiobook.title,
-                    author: audiobook.author,
-                    narrator: audiobook.narrator,
-                    year: audiobook.year,
-                    asin: audiobook.asin,
-                    outputPath,
-                  },
-                  logger ?? undefined
-                );
-
-                if (mergeResult.success && mergeResult.outputPath) {
-                  await logger?.info(
-                    `Merge successful: ${mergeResult.chapterCount} chapters, ${formatDuration(mergeResult.totalDuration || 0)}`
+                  // Perform merge
+                  const mergeResult = await mergeChapters(
+                    chapters,
+                    {
+                      title: audiobook.title,
+                      author: audiobook.author,
+                      narrator: audiobook.narrator,
+                      year: audiobook.year,
+                      asin: audiobook.asin,
+                      outputPath,
+                    },
+                    logger ?? undefined
                   );
 
-                  // Replace audioFiles array with single merged file
-                  audioFiles.length = 0;
-                  audioFiles.push(mergeResult.outputPath);
+                  if (mergeResult.success && mergeResult.outputPath) {
+                    // Replace audioFiles array with single merged file
+                    audioFiles.length = 0;
+                    audioFiles.push(mergeResult.outputPath);
 
-                  // Mark for cleanup after copy
-                  tempMergedFile = mergeResult.outputPath;
+                    // Mark for cleanup after copy
+                    tempMergedFile = mergeResult.outputPath;
 
-                  // Update isFile flag since we now have a single file path
-                  // (not in the download directory structure)
-                } else {
-                  await logger?.warn(`Chapter merge failed: ${mergeResult.error}. Falling back to individual files.`);
-                  result.errors.push(`Chapter merge failed: ${mergeResult.error}`);
-                  // Continue with original audioFiles array
+                    await logger?.info(`Chapter merge complete - organizing single M4B file`);
+
+                    // Update isFile flag since we now have a single file path
+                    // (not in the download directory structure)
+                  } else {
+                    await logger?.warn(`Chapter merge failed: ${mergeResult.error}. Organizing ${audioFiles.length} files individually.`);
+                    result.errors.push(`Chapter merge failed: ${mergeResult.error}`);
+                    // Continue with original audioFiles array
+                  }
                 }
               }
+            } else {
+              // detectChapterFiles already logged the reason for skipping
+              await logger?.info(`Organizing ${audioFiles.length} files individually`);
             }
           }
         } catch (error) {
           await logger?.error(`Chapter merging error: ${error instanceof Error ? error.message : 'Unknown error'}`);
           result.errors.push(`Chapter merging error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          await logger?.warn(`Falling back to organizing ${audioFiles.length} files individually`);
           // Continue with original audioFiles array
         }
+      } else {
+        await logger?.info(`Single audio file detected - no chapter merging needed`);
       }
 
       // Tag metadata BEFORE moving files (prevents Plex race condition)

@@ -2,6 +2,10 @@
 # Single container with PostgreSQL, Redis, and Next.js app
 # Designed for easy deployment with minimal configuration
 
+# Build arguments for version info
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
 # Start from debian base with node preinstalled
 FROM node:20-bookworm AS base
 
@@ -44,6 +48,12 @@ COPY . .
 # Generate Prisma client AFTER copying code (prevents stale generated files from overwriting)
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy?schema=public"
 RUN npx prisma generate
+
+# Set version environment variables for build and runtime
+ENV NEXT_PUBLIC_GIT_COMMIT=${GIT_COMMIT}
+ENV NEXT_PUBLIC_BUILD_DATE=${BUILD_DATE}
+ENV APP_VERSION=${GIT_COMMIT}
+ENV BUILD_DATE=${BUILD_DATE}
 
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1

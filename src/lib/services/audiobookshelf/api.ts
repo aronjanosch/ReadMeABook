@@ -92,9 +92,33 @@ export async function searchABSItems(libraryId: string, query: string) {
 
 /**
  * Trigger a library scan
+ * Note: This endpoint returns plain text "OK" instead of JSON
  */
 export async function triggerABSScan(libraryId: string) {
-  await absRequest(`/libraries/${libraryId}/scan`, { method: 'POST' });
+  const configService = getConfigService();
+  const serverUrl = await configService.get('audiobookshelf.server_url');
+  const apiToken = await configService.get('audiobookshelf.api_token');
+
+  if (!serverUrl || !apiToken) {
+    throw new Error('Audiobookshelf not configured');
+  }
+
+  const url = `${serverUrl.replace(/\/$/, '')}/api/libraries/${libraryId}/scan`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`ABS API error: ${response.status} ${response.statusText}`);
+  }
+
+  // Endpoint returns plain text "OK", not JSON - don't try to parse it
+  await response.text();
 }
 
 /**

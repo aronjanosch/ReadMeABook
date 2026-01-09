@@ -6,12 +6,31 @@ Single tabbed interface for admins to view/modify system configuration post-setu
 
 ## Sections
 
-1. **Plex** - URL, token (masked), library ID
-2. **Prowlarr** - URL, API key (masked), indexer selection with priority, seeding time, RSS monitoring toggle
-3. **Download Client** - Type, URL, credentials (masked)
-4. **Paths** - Download + media directories
-5. **BookDate** - AI provider, API key (encrypted), model selection, library scope, custom prompt, swipe history
-6. **Account** - Local admin password change (only visible to setup admin)
+1. **Plex** - URL, token (masked), library ID, filesystem scan trigger toggle
+2. **Audiobookshelf** - URL, API token (masked), library ID, filesystem scan trigger toggle
+3. **Prowlarr** - URL, API key (masked), indexer selection with priority, seeding time, RSS monitoring toggle
+4. **Download Client** - Type, URL, credentials (masked)
+5. **Paths** - Download + media directories
+6. **BookDate** - AI provider, API key (encrypted), model selection, library scope, custom prompt, swipe history
+7. **Account** - Local admin password change (only visible to setup admin)
+
+## Filesystem Scan Trigger
+
+**Purpose:** Trigger Plex/Audiobookshelf to scan filesystem after organizing files for users with disabled filesystem watchers.
+
+**Configuration:**
+- Plex: `plex.trigger_scan_after_import` (boolean, default: false)
+- Audiobookshelf: `audiobookshelf.trigger_scan_after_import` (boolean, default: false)
+
+**UI:**
+- Checkbox toggle in both Plex and Audiobookshelf settings tabs
+- Default: Unchecked (disabled)
+- Help text: "Only enable this if you have [Plex/Audiobookshelf]'s filesystem watcher (automatic scanning) disabled. Most users should leave this disabled and rely on [Plex/Audiobookshelf]'s built-in automatic detection."
+
+**Behavior:**
+- When enabled: After `organize_files` job completes, RMAB triggers filesystem scan in media server
+- When disabled: User relies on media server's filesystem watcher or manual scans
+- Error handling: Scan failures logged but don't fail organize job (graceful degradation)
 
 ## Validation Flow
 

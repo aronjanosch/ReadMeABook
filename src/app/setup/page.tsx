@@ -43,11 +43,13 @@ interface SetupState {
   plexUrl: string;
   plexToken: string;
   plexLibraryId: string;
+  plexTriggerScanAfterImport: boolean;
 
   // Audiobookshelf config (if mode=audiobookshelf)
   absUrl: string;
   absApiToken: string;
   absLibraryId: string;
+  absTriggerScanAfterImport: boolean;
 
   // Auth config (if mode=audiobookshelf)
   authMethod: 'oidc' | 'manual' | 'both';
@@ -113,11 +115,13 @@ export default function SetupWizard() {
     plexUrl: '',
     plexToken: '',
     plexLibraryId: '',
+    plexTriggerScanAfterImport: false,
 
     // Audiobookshelf config
     absUrl: '',
     absApiToken: '',
     absLibraryId: '',
+    absTriggerScanAfterImport: false,
 
     // Auth config
     authMethod: 'oidc',
@@ -391,6 +395,7 @@ export default function SetupWizard() {
             plexUrl={state.plexUrl}
             plexToken={state.plexToken}
             plexLibraryId={state.plexLibraryId}
+            plexTriggerScanAfterImport={state.plexTriggerScanAfterImport}
             onUpdate={updateField}
             onNext={() => goToStep(currentStepNumber + 1)}
             onBack={() => goToStep(currentStepNumber - 1)}
@@ -408,6 +413,7 @@ export default function SetupWizard() {
             absUrl={state.absUrl}
             absApiToken={state.absApiToken}
             absLibraryId={state.absLibraryId}
+            absTriggerScanAfterImport={state.absTriggerScanAfterImport}
             onUpdate={updateField}
             onNext={() => goToStep(currentStepNumber + 1)}
             onBack={() => goToStep(currentStepNumber - 1)}

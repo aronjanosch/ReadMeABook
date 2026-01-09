@@ -37,11 +37,13 @@ export async function GET(request: NextRequest) {
         url: configMap.get('plex_url') || '',
         token: maskValue('token', configMap.get('plex_token')),
         libraryId: configMap.get('plex_audiobook_library_id') || '',
+        triggerScanAfterImport: configMap.get('plex.trigger_scan_after_import') === 'true',
       },
       audiobookshelf: {
         serverUrl: configMap.get('audiobookshelf.server_url') || '',
         apiToken: maskValue('api_token', configMap.get('audiobookshelf.api_token')),
         libraryId: configMap.get('audiobookshelf.library_id') || '',
+        triggerScanAfterImport: configMap.get('audiobookshelf.trigger_scan_after_import') === 'true',
       },
       oidc: {
         enabled: configMap.get('oidc.enabled') === 'true',

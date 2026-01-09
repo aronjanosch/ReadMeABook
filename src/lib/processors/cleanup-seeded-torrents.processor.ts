@@ -45,15 +45,19 @@ export async function processCleanupSeededTorrents(payload: CleanupSeededTorrent
     await logger?.info(`Loaded configuration for ${indexerConfigMap.size} indexers`);
 
     // Find all completed requests + soft-deleted requests (orphaned downloads)
+    // IMPORTANT: Only cleanup requests that are truly complete and not being actively processed
+    // NOTE: Multiple requests can share the same torrent hash (e.g., re-requesting same audiobook)
+    // Before deleting torrent, we check if other active requests are using it
     const completedRequests = await prisma.request.findMany({
       where: {
         OR: [
-          // Active requests with completed downloads
+          // Active requests that are fully available (scanned by Plex/ABS)
           {
-            status: { in: ['available', 'downloaded'] },
+            status: 'available',
             deletedAt: null,
           },
-          // Soft-deleted requests (orphaned downloads still seeding)
+          // Soft-deleted requests (orphaned downloads)
+          // We'll check if torrent is shared with active requests before deletion
           {
             deletedAt: { not: null },
           },
@@ -72,7 +76,7 @@ export async function processCleanupSeededTorrents(payload: CleanupSeededTorrent
       take: 100, // Limit to 100 requests per run
     });
 
-    await logger?.info(`Found ${completedRequests.length} completed requests to check`);
+    await logger?.info(`Found ${completedRequests.length} requests to check (status: 'available' or soft-deleted)`);
 
     let cleaned = 0;
     let skipped = 0;
@@ -144,7 +148,36 @@ export async function processCleanupSeededTorrents(payload: CleanupSeededTorrent
 
         await logger?.info(`Torrent ${torrent.name} (${indexerName}) has met seeding requirement (${Math.floor(actualSeedingTime / 60)}/${seedingConfig.seedingTimeMinutes} minutes)`);
 
-        // Delete torrent and files from qBittorrent
+        // CRITICAL: Check if any other active (non-deleted) request is using this same torrent hash
+        // This prevents deleting shared torrents when user re-requests the same audiobook
+        const otherActiveRequests = await prisma.request.findMany({
+          where: {
+            id: { not: request.id }, // Exclude current request
+            deletedAt: null, // Only check active requests
+            downloadHistory: {
+              some: {
+                torrentHash: downloadHistory.torrentHash,
+                selected: true,
+              },
+            },
+          },
+          select: { id: true, status: true },
+        });
+
+        if (otherActiveRequests.length > 0) {
+          await logger?.info(`Skipping torrent deletion - ${otherActiveRequests.length} other active request(s) still using this torrent (IDs: ${otherActiveRequests.map(r => r.id).join(', ')})`);
+
+          // If this is a soft-deleted request, hard delete it but DON'T delete the torrent
+          if (request.deletedAt) {
+            await prisma.request.delete({ where: { id: request.id } });
+            await logger?.info(`Hard-deleted orphaned request ${request.id} (kept shared torrent for active requests)`);
+          }
+
+          skipped++;
+          continue;
+        }
+
+        // Safe to delete - no other active requests using this torrent
         await qbt.deleteTorrent(downloadHistory.torrentHash, true); // true = delete files
 
         // If this is a soft-deleted request (orphaned download), hard delete it now

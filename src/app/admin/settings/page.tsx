@@ -38,11 +38,13 @@ interface Settings {
     url: string;
     token: string;
     libraryId: string;
+    triggerScanAfterImport: boolean;
   };
   audiobookshelf: {
     serverUrl: string;
     apiToken: string;
     libraryId: string;
+    triggerScanAfterImport: boolean;
   };
   oidc: {
     enabled: boolean;
@@ -1193,6 +1195,32 @@ export default function AdminSettings() {
                   )}
                 </div>
 
+                <div className="space-y-2">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.plex.triggerScanAfterImport}
+                      onChange={(e) => {
+                        setSettings({
+                          ...settings,
+                          plex: { ...settings.plex, triggerScanAfterImport: e.target.checked },
+                        });
+                      }}
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Trigger library scan after import
+                      </span>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Automatically triggers Plex to scan its filesystem after organizing downloaded files.
+                        Only enable this if you have Plex's filesystem watcher (automatic scanning) disabled.
+                        Most users should leave this disabled and rely on Plex's built-in automatic detection.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
                   <Button
                     onClick={testPlexConnection}
@@ -1300,6 +1328,32 @@ export default function AdminSettings() {
                       Test your connection to load libraries.
                     </div>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.audiobookshelf.triggerScanAfterImport}
+                      onChange={(e) => {
+                        setSettings({
+                          ...settings,
+                          audiobookshelf: { ...settings.audiobookshelf, triggerScanAfterImport: e.target.checked },
+                        });
+                      }}
+                      className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Trigger library scan after import
+                      </span>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Automatically triggers Audiobookshelf to scan its filesystem after organizing downloaded files.
+                        Only enable this if you have Audiobookshelf's filesystem watcher (automatic scanning) disabled.
+                        Most users should leave this disabled and rely on Audiobookshelf's built-in automatic detection.
+                      </p>
+                    </div>
+                  </label>
                 </div>
 
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-6">

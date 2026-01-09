@@ -37,7 +37,46 @@ Default: `/media/audiobooks/` (if not configured)
 5. **Copy** files (not move - originals stay for seeding)
 6. **Tag metadata** (if enabled) - writes correct title, author, narrator, ASIN to audio files
 7. Copy cover art if found, else download from Audible
-8. Originals remain until seeding requirements met
+8. Update request status to `downloaded`
+9. **Trigger filesystem scan** (if enabled) - tells Plex/ABS to scan for new files
+10. Originals remain until seeding requirements met
+
+## Filesystem Scan Triggering
+
+**Status:** ✅ Implemented (Both Backends)
+
+**Purpose:** Trigger Plex/Audiobookshelf to scan filesystem after organizing files, ensuring new books appear immediately for users with disabled filesystem watchers.
+
+**Configuration:**
+- Plex: `plex.trigger_scan_after_import` (boolean, default: false)
+- Audiobookshelf: `audiobookshelf.trigger_scan_after_import` (boolean, default: false)
+
+**Flow:**
+1. Files organized to media directory
+2. Request status updated to `downloaded`
+3. Check config setting (backend-specific)
+4. If enabled: Call `ILibraryService.triggerLibraryScan(libraryId)`
+5. Media server scans filesystem (async operation)
+6. RMAB's scheduled check eventually detects new book
+7. Request status updates to `available`
+
+**Implementation:**
+- Uses existing `ILibraryService` abstraction
+- `PlexLibraryService.triggerLibraryScan()` → `POST /library/sections/{id}/refresh`
+- `AudiobookshelfLibraryService.triggerLibraryScan()` → `POST /api/libraries/{id}/scan`
+- Called from `organize-files.processor.ts` after status update
+- Backend-agnostic using factory pattern
+
+**Error Handling:**
+- Scan failures logged but don't fail organize job
+- Graceful degradation: scheduled scans eventually detect the book
+- Non-blocking: async operation doesn't delay other jobs
+
+**Use Cases:**
+- Users with Plex/ABS filesystem watcher disabled
+- Network-mounted media directories with delayed inotify
+- Users who prefer manual control over automatic scanning
+- Most users keep this disabled (default) and rely on built-in watchers
 
 ## Metadata Tagging
 
@@ -107,10 +146,21 @@ exiftool "audiobook.m4b" | grep -i asin
 **Config:** `seeding_time_minutes` (0 = unlimited, never cleanup)
 
 **Cleanup Job:** `cleanup_seeded_torrents` (every 30 mins)
-1. Check 'available' and 'downloaded' status requests with download history
+1. Find requests with status 'available' or soft-deleted (orphaned downloads)
 2. Query qBittorrent for actual `seeding_time` field
-3. Delete torrent + files only after requirement met
-4. Respects config (0 = never cleanup)
+3. **CRITICAL: Check if torrent hash is shared by other active requests**
+   - If yes → Skip torrent deletion, only hard-delete the soft-deleted request record
+   - If no → Delete torrent + files
+4. Delete torrent + files only after seeding requirement met
+5. Respects config (0 = never cleanup)
+
+**Shared Torrent Protection:**
+When user deletes and re-requests the same audiobook:
+- Both requests share the same torrent hash (same files)
+- Cleanup finds old soft-deleted request
+- Before deleting torrent, checks if any active (non-deleted) request uses same hash
+- If found → Keeps torrent, only removes soft-deleted database record
+- Prevents deleting source files for active requests during chapter merging
 
 ## Interface
 

@@ -6,15 +6,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/Button';
+import { VersionBadge } from '@/components/ui/VersionBadge';
+import { useSmartDropdownPosition } from '@/hooks/useSmartDropdownPosition';
 
 export function Header() {
   const { user, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showBookDate, setShowBookDate] = useState(false);
+  const { containerRef, dropdownRef, positionAbove, style } = useSmartDropdownPosition(showUserMenu);
 
   // Check if BookDate is configured
   useEffect(() => {
@@ -67,21 +71,50 @@ export function Header() {
     }
   };
 
+  // User menu dropdown (rendered via portal)
+  const userMenuDropdown = showUserMenu && style && (
+    <div
+      ref={dropdownRef}
+      style={style}
+      className="w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50 max-h-[calc(100vh-2rem)] overflow-y-auto"
+    >
+      <Link
+        href="/profile"
+        className="block px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+        onClick={() => setShowUserMenu(false)}
+      >
+        Profile
+      </Link>
+      <button
+        onClick={() => {
+          logout();
+          setShowUserMenu(false);
+        }}
+        className="w-full text-left px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+      >
+        Logout
+      </button>
+    </div>
+  );
+
   return (
     <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-40">
       <div className="container mx-auto px-4 py-3 md:py-4 max-w-7xl">
         <div className="flex items-center justify-between">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <img
-              src="/rmab_32x32.png"
-              alt="ReadMeABook Logo"
-              className="w-8 h-8"
-            />
-            <span className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100">
-              ReadMeABook
-            </span>
-          </Link>
+          {/* Logo and Version Badge */}
+          <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-2">
+              <img
+                src="/rmab_32x32.png"
+                alt="ReadMeABook Logo"
+                className="w-8 h-8"
+              />
+              <span className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-100">
+                ReadMeABook
+              </span>
+            </Link>
+            <VersionBadge />
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">
@@ -154,7 +187,7 @@ export function Header() {
             </button>
 
             {user ? (
-              <div className="relative">
+              <div className="relative" ref={containerRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
                   className="flex items-center gap-2 hover:opacity-80 transition-opacity"
@@ -174,27 +207,6 @@ export function Header() {
                     {user.username}
                   </span>
                 </button>
-
-                {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg py-1 z-50">
-                    <Link
-                      href="/profile"
-                      className="block px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      onClick={() => setShowUserMenu(false)}
-                    >
-                      Profile
-                    </Link>
-                    <button
-                      onClick={() => {
-                        logout();
-                        setShowUserMenu(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    >
-                      Logout
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <Button onClick={handleLogin} variant="primary" size="sm">
@@ -253,6 +265,9 @@ export function Header() {
           </div>
         )}
       </div>
+
+      {/* User menu dropdown (rendered via portal) */}
+      {typeof window !== 'undefined' && userMenuDropdown && createPortal(userMenuDropdown, document.body)}
     </header>
   );
 }

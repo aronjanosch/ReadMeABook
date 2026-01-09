@@ -7,6 +7,8 @@ import { OrganizeFilesPayload, getJobQueueService } from '../services/job-queue.
 import { prisma } from '../db';
 import { getFileOrganizer } from '../utils/file-organizer';
 import { createJobLogger } from '../utils/job-logger';
+import { getLibraryService } from '../services/library';
+import { getConfigService } from '../services/config.service';
 
 /**
  * Process organize files job
@@ -98,6 +100,54 @@ export async function processOrganizeFiles(payload: OrganizeFilesPayload): Promi
       coverArt: result.coverArtFile,
       errors: result.errors,
     });
+
+    // Trigger filesystem scan if enabled (Plex or Audiobookshelf)
+    const configService = getConfigService();
+    const backendMode = await configService.getBackendMode();
+
+    const configKey = backendMode === 'audiobookshelf'
+      ? 'audiobookshelf.trigger_scan_after_import'
+      : 'plex.trigger_scan_after_import';
+
+    const scanEnabled = await configService.get(configKey);
+
+    if (scanEnabled === 'true') {
+      try {
+        // Get library service (returns PlexLibraryService or AudiobookshelfLibraryService)
+        const libraryService = await getLibraryService();
+
+        // Get configured library ID (backend-specific config)
+        const libraryId = backendMode === 'audiobookshelf'
+          ? await configService.get('audiobookshelf.library_id')
+          : await configService.get('plex_audiobook_library_id');
+
+        if (!libraryId) {
+          throw new Error('Library ID not configured');
+        }
+
+        // Trigger scan (implementation is backend-specific)
+        await libraryService.triggerLibraryScan(libraryId);
+
+        await logger?.info(
+          `Triggered ${backendMode} filesystem scan for library ${libraryId}`
+        );
+
+      } catch (error) {
+        // Log error but don't fail the job
+        await logger?.error(
+          `Failed to trigger filesystem scan: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          {
+            error: error instanceof Error ? error.stack : undefined,
+            backend: backendMode
+          }
+        );
+        // Continue - scheduled scans will eventually detect the book
+      }
+    } else {
+      await logger?.info(
+        `${backendMode} filesystem scan trigger disabled (relying on filesystem watcher)`
+      );
+    }
 
     return {
       success: true,
