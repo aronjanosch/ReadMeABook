@@ -38,6 +38,7 @@ function LoginContent() {
     hasLocalUsers: boolean;
     oidcProviderName: string | null;
     localLoginDisabled: boolean;
+    automationEnabled: boolean;
   } | null>(null);
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [registerUsername, setRegisterUsername] = useState('');
@@ -77,6 +78,7 @@ function LoginContent() {
           hasLocalUsers: false,
           oidcProviderName: null,
           localLoginDisabled: false,
+          automationEnabled: false,
         });
       }
     };
@@ -519,7 +521,25 @@ function LoginContent() {
             {/* Description */}
             <div className="mb-6 sm:mb-8 text-center">
               <p className="text-gray-400 text-sm sm:text-base">
-                Request audiobooks and they'll automatically download and appear in your Plex library
+                {(() => {
+                  if (!authProviders) return 'Your Personal Audiobook Library Manager';
+
+                  const { backendMode, automationEnabled } = authProviders;
+
+                  // Audiobookshelf mode
+                  if (backendMode === 'audiobookshelf') {
+                    if (automationEnabled) {
+                      return "Request audiobooks and they'll automatically download and appear in your Audiobookshelf library";
+                    }
+                    return "Request audiobooks for your Audiobookshelf library";
+                  }
+
+                  // Plex mode (default)
+                  if (automationEnabled) {
+                    return "Request audiobooks and they'll automatically download and appear in your Plex library";
+                  }
+                  return "Request audiobooks for your Plex library";
+                })()}
               </p>
             </div>
 

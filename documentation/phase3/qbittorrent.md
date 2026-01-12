@@ -181,6 +181,13 @@ type TorrentState = 'downloading' | 'uploading' | 'stalledDL' |
    - Headers set to qBittorrent base URL (e.g., `https://seedbox.example.com:443/qbittorrent`)
    - Applied to both `login()` and `testConnectionWithCredentials()` methods
    - Works with all qBittorrent versions and configurations
+   - Enhanced debug logging for troubleshooting authentication issues (enable with `LOG_LEVEL=debug`)
+**13. Nginx/Apache reverse proxy HTTP Basic Auth** - Many seedboxes use nginx or Apache reverse proxy with HTTP Basic Authentication in front of qBittorrent. This causes HTTP 401 errors with `www-authenticate: Basic` header. Browsers handle this by prompting for credentials and sending `Authorization: Basic` header. Fixed by:
+   - Adding HTTP Basic Auth to all axios requests using `auth` parameter
+   - Same credentials used for both Basic Auth (nginx/Apache) and qBittorrent Web UI authentication
+   - Applied to axios client instance and all standalone requests
+   - Works transparently with or without reverse proxy
+   - Compatible with popular seedbox providers (seedit4.me, etc.)
 
 ## Tech Stack
 

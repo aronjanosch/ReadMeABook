@@ -115,6 +115,11 @@ export class QBittorrentService {
       baseURL: `${this.baseUrl}/api/v2`,
       timeout: 30000,
       httpsAgent: this.httpsAgent,
+      // Support nginx/Apache reverse proxy with HTTP Basic Auth
+      auth: {
+        username: this.username,
+        password: this.password,
+      },
     });
   }
 
@@ -122,9 +127,20 @@ export class QBittorrentService {
    * Authenticate and establish session
    */
   async login(): Promise<void> {
+    const loginUrl = `${this.baseUrl}/api/v2/auth/login`;
+
+    logger.debug('[QBittorrent] Attempting login', {
+      url: loginUrl,
+      baseUrl: this.baseUrl,
+      username: this.username,
+      hasPassword: !!this.password,
+      passwordLength: this.password?.length,
+      sslVerifyDisabled: this.disableSSLVerify,
+    });
+
     try {
       const response = await axios.post(
-        `${this.baseUrl}/api/v2/auth/login`,
+        loginUrl,
         new URLSearchParams({
           username: this.username,
           password: this.password,
@@ -136,22 +152,52 @@ export class QBittorrentService {
             'Origin': this.baseUrl,
           },
           httpsAgent: this.httpsAgent,
+          // Support nginx/Apache reverse proxy with HTTP Basic Auth
+          auth: {
+            username: this.username,
+            password: this.password,
+          },
         }
       );
+
+      logger.debug('[QBittorrent] Login response received', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data,
+        hasSetCookie: !!response.headers['set-cookie'],
+        setCookieCount: response.headers['set-cookie']?.length || 0,
+      });
 
       // Extract cookie from response
       const cookies = response.headers['set-cookie'];
       if (cookies && cookies.length > 0) {
         this.cookie = cookies[0].split(';')[0];
+        logger.debug('[QBittorrent] Cookie extracted', {
+          cookieName: this.cookie.split('=')[0],
+          cookieLength: this.cookie.length,
+        });
       }
 
       if (!this.cookie) {
+        logger.error('[QBittorrent] No cookie received in response');
         throw new Error('Failed to authenticate with qBittorrent');
       }
 
       logger.info('Successfully authenticated');
     } catch (error) {
-      logger.error('Login failed', { error: error instanceof Error ? error.message : String(error) });
+      if (axios.isAxiosError(error)) {
+        logger.error('[QBittorrent] Login failed with axios error', {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          responseData: error.response?.data,
+          requestUrl: error.config?.url,
+          requestHeaders: error.config?.headers,
+        });
+      } else {
+        logger.error('Login failed', { error: error instanceof Error ? error.message : String(error) });
+      }
       throw new Error('Failed to authenticate with qBittorrent');
     }
   }
@@ -687,6 +733,7 @@ export class QBittorrentService {
     disableSSLVerify: boolean = false
   ): Promise<string> {
     const baseUrl = url.replace(/\/$/, '');
+    const loginUrl = `${baseUrl}/api/v2/auth/login`;
 
     // Create HTTPS agent if SSL verification is disabled
     let httpsAgent: https.Agent | undefined;
@@ -697,36 +744,97 @@ export class QBittorrentService {
       logger.info('[QBittorrent] SSL certificate verification disabled for test connection');
     }
 
+    logger.debug('[QBittorrent] Test connection attempt', {
+      loginUrl,
+      baseUrl,
+      username,
+      hasPassword: !!password,
+      passwordLength: password?.length,
+      sslVerifyDisabled: disableSSLVerify,
+      hasHttpsAgent: !!httpsAgent,
+    });
+
     try {
+      const requestBody = new URLSearchParams({ username, password });
+      const requestHeaders = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': baseUrl,
+        'Origin': baseUrl,
+      };
+
+      logger.debug('[QBittorrent] Sending login request', {
+        body: requestBody.toString(),
+        headers: requestHeaders,
+      });
+
       const response = await axios.post(
-        `${baseUrl}/api/v2/auth/login`,
-        new URLSearchParams({ username, password }),
+        loginUrl,
+        requestBody,
         {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer': baseUrl,
-            'Origin': baseUrl,
-          },
+          headers: requestHeaders,
           httpsAgent,
+          // Support nginx/Apache reverse proxy with HTTP Basic Auth
+          auth: {
+            username,
+            password,
+          },
         }
       );
+
+      logger.debug('[QBittorrent] Login response received', {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data,
+        hasSetCookie: !!response.headers['set-cookie'],
+        setCookieCount: response.headers['set-cookie']?.length || 0,
+        allHeaders: Object.keys(response.headers),
+      });
 
       // Get version to confirm connection
       const cookies = response.headers['set-cookie'];
       if (!cookies || cookies.length === 0) {
+        logger.error('[QBittorrent] No cookies in response', {
+          responseHeaders: response.headers,
+        });
         throw new Error('Failed to authenticate - no session cookie received');
       }
 
       const cookie = cookies[0].split(';')[0];
+      logger.debug('[QBittorrent] Cookie extracted', {
+        cookieName: cookie.split('=')[0],
+        cookieLength: cookie.length,
+      });
 
       const versionResponse = await axios.get(`${baseUrl}/api/v2/app/version`, {
         headers: { Cookie: cookie },
         httpsAgent,
+        // Support nginx/Apache reverse proxy with HTTP Basic Auth
+        auth: {
+          username,
+          password,
+        },
+      });
+
+      logger.info('[QBittorrent] Version check successful', {
+        version: versionResponse.data,
       });
 
       return versionResponse.data || 'Connected';
     } catch (error) {
-      logger.error('Connection test failed', { error: error instanceof Error ? error.message : String(error) });
+      if (axios.isAxiosError(error)) {
+        logger.error('[QBittorrent] Test connection failed with axios error', {
+          message: error.message,
+          code: error.code,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          responseData: error.response?.data,
+          requestUrl: error.config?.url,
+          requestHeaders: error.config?.headers,
+          responseHeaders: error.response?.headers,
+        });
+      } else {
+        logger.error('Connection test failed', { error: error instanceof Error ? error.message : String(error) });
+      }
 
       // Enhanced error messages for common issues
       if (axios.isAxiosError(error)) {

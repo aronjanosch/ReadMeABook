@@ -216,6 +216,8 @@ Automatically grants admin permissions based on OIDC claims (e.g., group members
 - **GET /api/auth/oidc/login** - Initiate OIDC flow, redirect to provider
 - **GET /api/auth/oidc/callback** - Handle OAuth callback, create/update user, return JWT
 - **GET /api/auth/providers** - List enabled auth providers for login page
+  - Returns: `backendMode`, `providers[]`, `registrationEnabled`, `hasLocalUsers`, `oidcProviderName`, `localLoginDisabled`, `automationEnabled`
+  - `automationEnabled`: true if Prowlarr/indexer configured (used for dynamic login page description)
 
 ### Configuration Keys
 ```

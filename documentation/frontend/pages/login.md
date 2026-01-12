@@ -2,7 +2,7 @@
 
 **Status:** ✅ Implemented | Real floating book covers with professional animations
 
-Stylized entry point with Plex OAuth integration, animated floating popular audiobook covers, and prominent "Login with Plex" CTA.
+Stylized entry point with Plex/Audiobookshelf authentication, animated floating popular audiobook covers, and dynamic description based on backend configuration.
 
 ## Design
 
@@ -13,6 +13,7 @@ Stylized entry point with Plex OAuth integration, animated floating popular audi
 - Multi-layer depth effect with z-index layering (0-20)
 - Dark theme optimized with glassmorphism card
 - Professional streaming service aesthetic
+- **Dynamic description** based on backend mode (Plex/Audiobookshelf) and automation status
 
 ## Authentication Flow
 
@@ -53,6 +54,18 @@ Stylized entry point with Plex OAuth integration, animated floating popular audi
 - Seed multipliers (7, 13, 17, 23, 29, 31) prevent pattern repetition
 - Math.sin() based pseudo-random for deterministic results
 
+## Dynamic Description
+
+Description text adapts to backend configuration:
+
+**Plex + Automation Enabled:** "Request audiobooks and they'll automatically download and appear in your Plex library"
+**Plex + No Automation:** "Request audiobooks for your Plex library"
+**Audiobookshelf + Automation:** "Request audiobooks and they'll automatically download and appear in your Audiobookshelf library"
+**Audiobookshelf + No Automation:** "Request audiobooks for your Audiobookshelf library"
+**Loading State:** "Your Personal Audiobook Library Manager"
+
+Automation is detected by checking for configured indexer (Prowlarr) via `/api/auth/providers` endpoint.
+
 ## State
 
 ```typescript
@@ -65,6 +78,15 @@ interface LoginPageState {
   showAdminLogin: boolean;
   adminUsername: string;
   adminPassword: string;
+  authProviders: {
+    backendMode: string;
+    providers: string[];
+    registrationEnabled: boolean;
+    hasLocalUsers: boolean;
+    oidcProviderName: string | null;
+    localLoginDisabled: boolean;
+    automationEnabled: boolean;
+  } | null;
 }
 
 interface BookCover {

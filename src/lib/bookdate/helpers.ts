@@ -448,25 +448,17 @@ export async function buildAIPrompt(
       custom_preferences: config.customPrompt || null,
     },
     instructions:
-      'Based on the user\'s library and swipe history, recommend 20 audiobooks they would enjoy. ' +
-      'Important rules:\n' +
-      '1. DO NOT recommend any books already in the user\'s library\n' +
+      'Recommend 15-20 audiobooks the user would enjoy based on their library and swipe history. ' +
+      'CRITICAL RULES:\n' +
+      '1. DO NOT recommend any books already in the user\'s library (check titles carefully)\n' +
       '2. DO NOT recommend any books from the swipe history (whether requested, rejected, dismissed, or marked_as_liked)\n' +
-      '3. Focus on variety and quality\n' +
-      '4. Consider user ratings if available (0-10 scale, higher = liked more)\n' +
-      '5. Learn from rejected books to avoid similar recommendations\n' +
-      '6. Learn from requested books to find similar ones\n' +
-      '7. Pay special attention to "marked_as_liked" books - these are books the user has already read/listened to elsewhere and enjoyed. Find similar books to these.\n' +
-      'Return ONLY valid JSON with no additional text or formatting.',
-    response_format: {
-      recommendations: [
-        {
-          title: 'string',
-          author: 'string',
-          reason: '1-2 sentence explanation',
-        },
-      ],
-    },
+      '3. You must provide 15-20 diverse recommendations, not just 3-5\n' +
+      '4. Focus on variety across genres, authors, and styles\n' +
+      '5. Consider user ratings if available (0-10 scale, higher = liked more)\n' +
+      '6. Learn from rejected books to avoid similar recommendations\n' +
+      '7. Learn from requested books to find similar ones\n' +
+      '8. Pay special attention to "marked_as_liked" books - these are books the user has already read/listened to elsewhere and enjoyed. Find similar books to these.\n' +
+      '9. Each recommendation should be a NEW book not mentioned anywhere in the user context',
   };
 
   const promptString = JSON.stringify(prompt);
@@ -487,18 +479,62 @@ export async function callAI(
   provider: string,
   model: string,
   encryptedApiKey: string,
-  prompt: string
+  prompt: string,
+  baseUrl?: string | null
 ): Promise<{ recommendations: AIRecommendation[] }> {
   const encryptionService = getEncryptionService();
-  const apiKey = encryptionService.decrypt(encryptedApiKey);
+  let apiKey = '';
+  try {
+    apiKey = encryptionService.decrypt(encryptedApiKey);
+  } catch (error) {
+    // Allow empty API key for custom provider (local models)
+    if (provider !== 'custom') {
+      throw error;
+    }
+  }
 
   logger.info(`Calling AI provider: ${provider}, model: ${model}`);
 
+  // Define JSON schema for structured output
+  const responseSchema = {
+    type: 'json_schema',
+    json_schema: {
+      name: 'audiobook_recommendations',
+      strict: true,
+      schema: {
+        type: 'object',
+        properties: {
+          recommendations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                title: { type: 'string' },
+                author: { type: 'string' },
+                reason: { type: 'string' },
+              },
+              required: ['title', 'author', 'reason'],
+              additionalProperties: false,
+            },
+            minItems: 15,
+            maxItems: 20,
+          },
+        },
+        required: ['recommendations'],
+        additionalProperties: false,
+      },
+    },
+  };
+
+  const systemMessage = 'You are an expert audiobook recommender. ' +
+    'Your task is to recommend 15-20 NEW audiobooks that the user would enjoy. ' +
+    'NEVER recommend books that are already in the user\'s library or swipe history. ' +
+    'Focus on discovering books they haven\'t seen yet.';
+
   if (provider === 'openai') {
-    const systemMessage = 'You are an expert audiobook recommender. Analyze user preferences and suggest audiobooks they will love. Return ONLY valid JSON.';
     const requestBody = {
       model,
-      response_format: { type: 'json_object' },
+      response_format: responseSchema,
       messages: [
         {
           role: 'system',
@@ -534,10 +570,10 @@ export async function callAI(
     return JSON.parse(content);
 
   } else if (provider === 'claude') {
-    const userMessage = `${prompt}\n\nReturn ONLY valid JSON with no additional text or formatting.`;
+    const userMessage = `${systemMessage}\n\n${prompt}\n\nIMPORTANT: Provide exactly 15-20 recommendations. Return ONLY valid JSON with no additional text or formatting.`;
     const requestBody = {
       model,
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         {
           role: 'user',
@@ -576,6 +612,101 @@ export async function callAI(
 
     logger.debug('Claude cleaned response:', { cleanedContent });
     return JSON.parse(cleanedContent);
+
+  } else if (provider === 'custom') {
+    if (!baseUrl) {
+      throw new Error('Base URL is required for custom provider');
+    }
+
+    // Try with json_schema first
+    let requestBody: any = {
+      model,
+      response_format: responseSchema,
+      messages: [
+        {
+          role: 'system',
+          content: systemMessage,
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    };
+
+    logger.debug('Custom provider request body:', { requestBody, baseUrl });
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Only add Authorization header if API key provided
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const endpoint = baseUrl.replace(/\/$/, '') + '/chat/completions';
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error('Custom provider API error', { status: response.status, error: errorText });
+
+        // If response_format not supported, retry without it and add instructions to prompt
+        if (errorText.includes('response_format') || errorText.includes('json_schema')) {
+          logger.info('Retrying without response_format (provider does not support structured outputs)');
+          delete requestBody.response_format;
+          requestBody.messages[0].content = systemMessage + ' Return ONLY valid JSON with no additional text or formatting.';
+
+          const retryResponse = await fetch(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+          });
+
+          if (!retryResponse.ok) {
+            const retryErrorText = await retryResponse.text();
+            throw new Error(`Custom provider API error: ${retryResponse.status} ${retryErrorText}`);
+          }
+
+          const retryData = await retryResponse.json();
+          const retryContent = retryData.choices[0].message.content;
+
+          // Clean markdown code blocks
+          const cleanedContent = retryContent
+            .replace(/^```json\s*/i, '')
+            .replace(/\s*```$/i, '')
+            .trim();
+
+          logger.debug('Custom provider cleaned response (fallback):', { cleanedContent });
+          return JSON.parse(cleanedContent);
+        }
+
+        throw new Error(`Custom provider API error: ${response.status} ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0].message.content;
+      logger.debug('Custom provider response:', { content });
+
+      // Clean potential markdown wrapping (some providers still wrap even with json_schema)
+      const cleanedContent = content
+        .replace(/^```json\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+      return JSON.parse(cleanedContent);
+
+    } catch (error: any) {
+      logger.error('Custom provider error:', error);
+      throw new Error(`Custom provider error: ${error.message}`);
+    }
 
   } else {
     throw new Error(`Invalid provider: ${provider}`);

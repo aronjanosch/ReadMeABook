@@ -39,13 +39,13 @@ async function getConfig(req: AuthenticatedRequest) {
 async function saveConfig(req: AuthenticatedRequest) {
   try {
     const body = await req.json();
-    const { provider, apiKey, model, libraryScope, customPrompt, isEnabled } = body;
+    const { provider, apiKey, model, baseUrl, libraryScope, customPrompt, isEnabled } = body;
 
     // Check if config exists
     const existingConfig = await prisma.bookDateConfig.findFirst();
 
-    // Validation - API key only required for new configs
-    if (!existingConfig && !apiKey) {
+    // Validation - API key only required for new configs (except custom provider)
+    if (!existingConfig && !apiKey && provider !== 'custom') {
       return NextResponse.json(
         { error: 'API key is required for initial setup' },
         { status: 400 }
@@ -59,11 +59,37 @@ async function saveConfig(req: AuthenticatedRequest) {
       );
     }
 
-    if (!['openai', 'claude'].includes(provider)) {
+    if (!['openai', 'claude', 'custom'].includes(provider)) {
       return NextResponse.json(
-        { error: 'Invalid provider. Must be "openai" or "claude"' },
+        { error: 'Invalid provider. Must be "openai", "claude", or "custom"' },
         { status: 400 }
       );
+    }
+
+    // Custom provider requires baseUrl
+    if (provider === 'custom') {
+      if (!baseUrl) {
+        return NextResponse.json(
+          { error: 'Base URL is required for custom provider' },
+          { status: 400 }
+        );
+      }
+
+      // Validate URL format
+      try {
+        const parsed = new URL(baseUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return NextResponse.json(
+            { error: 'Invalid base URL. Must use http:// or https://' },
+            { status: 400 }
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: 'Invalid base URL format' },
+          { status: 400 }
+        );
+      }
     }
 
     // Determine which API key to use
@@ -73,13 +99,17 @@ async function saveConfig(req: AuthenticatedRequest) {
       // New API key provided - encrypt it
       const encryptionService = getEncryptionService();
       encryptedApiKeyToUse = encryptionService.encrypt(apiKey);
+    } else if (provider === 'custom' && !apiKey && !existingConfig) {
+      // Custom provider with no API key (local model) - encrypt empty string
+      const encryptionService = getEncryptionService();
+      encryptedApiKeyToUse = encryptionService.encrypt('');
     } else if (existingConfig) {
       // No new API key, use existing one
       encryptedApiKeyToUse = existingConfig.apiKey;
     } else {
-      // This shouldn't happen due to validation above, but just in case
+      // API key required for OpenAI/Claude
       return NextResponse.json(
-        { error: 'API key is required for new configuration' },
+        { error: 'API key is required' },
         { status: 400 }
       );
     }
@@ -100,6 +130,13 @@ async function saveConfig(req: AuthenticatedRequest) {
         updateData.apiKey = encryptedApiKeyToUse;
       }
 
+      // Update or clear baseUrl based on provider
+      if (provider === 'custom') {
+        updateData.baseUrl = baseUrl;
+      } else {
+        updateData.baseUrl = null; // Clear baseUrl when switching away from custom
+      }
+
       config = await prisma.bookDateConfig.update({
         where: { id: existingConfig.id },
         data: updateData,
@@ -111,6 +148,7 @@ async function saveConfig(req: AuthenticatedRequest) {
         data: {
           provider,
           model,
+          baseUrl: provider === 'custom' ? baseUrl : null,
           libraryScope: 'full', // Default value for backwards compatibility
           customPrompt: null,
           isEnabled: isEnabled !== undefined ? isEnabled : true,

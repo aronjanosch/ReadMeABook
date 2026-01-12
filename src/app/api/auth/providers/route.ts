@@ -18,6 +18,11 @@ export async function GET() {
     // Check if local login is disabled via environment variable
     const localLoginDisabled = process.env.DISABLE_LOCAL_LOGIN === 'true';
 
+    // Check if automation (Phase 3) is configured by checking for Prowlarr/indexer config
+    const indexerType = await configService.get('indexer.type');
+    const prowlarrUrl = await configService.get('indexer.prowlarr_url');
+    const automationEnabled = !!(indexerType || prowlarrUrl);
+
     if (backendMode === 'audiobookshelf') {
       // Audiobookshelf mode - check which auth methods are enabled
       const oidcEnabled = (await configService.get('oidc.enabled')) === 'true';
@@ -41,6 +46,7 @@ export async function GET() {
         hasLocalUsers,
         oidcProviderName: oidcEnabled ? oidcProviderName : null,
         localLoginDisabled,
+        automationEnabled,
       });
     } else {
       // Plex mode - check if local admin exists (setup admin)
@@ -58,6 +64,7 @@ export async function GET() {
         hasLocalUsers,
         oidcProviderName: null,
         localLoginDisabled,
+        automationEnabled,
       });
     }
   } catch (error) {
@@ -71,6 +78,7 @@ export async function GET() {
       hasLocalUsers: false,
       oidcProviderName: null,
       localLoginDisabled,
+      automationEnabled: false,
     });
   }
 }

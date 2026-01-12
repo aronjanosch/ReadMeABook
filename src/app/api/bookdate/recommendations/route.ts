@@ -80,7 +80,7 @@ async function handler(req: AuthenticatedRequest) {
     // Build prompt and call AI
     logger.info('Generating new recommendations for user', { userId });
     const prompt = await buildAIPrompt(userId, userPreferences);
-    const aiResponse = await callAI(config.provider, config.model, config.apiKey, prompt);
+    const aiResponse = await callAI(config.provider, config.model, config.apiKey, prompt, config.baseUrl);
 
     if (!aiResponse.recommendations || !Array.isArray(aiResponse.recommendations)) {
       throw new Error('Invalid AI response format: missing recommendations array');

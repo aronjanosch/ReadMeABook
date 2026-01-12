@@ -9,10 +9,24 @@ import { RMABLogger } from '@/lib/utils/logger';
 
 const logger = RMABLogger.create('API.BookDate.TestConnection');
 
+// Helper functions for custom provider
+function isValidBaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.replace(/\/$/, ''); // Remove trailing slash
+}
+
 async function authenticatedHandler(req: AuthenticatedRequest) {
   try {
     const body = await req.json();
-    const { provider, apiKey, useSavedKey } = body;
+    const { provider, apiKey, baseUrl, useSavedKey } = body;
 
     // Validate provider
     if (!provider) {
@@ -22,16 +36,35 @@ async function authenticatedHandler(req: AuthenticatedRequest) {
       );
     }
 
-    if (!['openai', 'claude'].includes(provider)) {
+    if (!['openai', 'claude', 'custom'].includes(provider)) {
       return NextResponse.json(
-        { error: 'Invalid provider. Must be "openai" or "claude"' },
+        { error: 'Invalid provider. Must be "openai", "claude", or "custom"' },
         { status: 400 }
       );
     }
 
-    // Get API key from saved global config if useSavedKey is true
+    // Custom provider requires baseUrl
+    if (provider === 'custom') {
+      if (!baseUrl && !useSavedKey) {
+        return NextResponse.json(
+          { error: 'Base URL is required for custom provider' },
+          { status: 400 }
+        );
+      }
+
+      const urlToValidate = useSavedKey ? null : baseUrl; // Will check saved URL later if useSavedKey
+      if (urlToValidate && !isValidBaseUrl(urlToValidate)) {
+        return NextResponse.json(
+          { error: 'Invalid base URL format. Must start with http:// or https://' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Get API key and baseUrl from saved global config if useSavedKey is true
     let testApiKey = apiKey;
-    if (useSavedKey && !testApiKey) {
+    let testBaseUrl = baseUrl;
+    if (useSavedKey) {
       const { prisma } = await import('@/lib/db');
       const { getEncryptionService } = await import('@/lib/services/encryption.service');
 
@@ -39,16 +72,38 @@ async function authenticatedHandler(req: AuthenticatedRequest) {
 
       if (!config || !config.apiKey) {
         return NextResponse.json(
-          { error: 'No saved API key found' },
+          { error: 'No saved configuration found' },
           { status: 400 }
         );
       }
 
       const encryptionService = getEncryptionService();
-      testApiKey = encryptionService.decrypt(config.apiKey);
+      try {
+        testApiKey = encryptionService.decrypt(config.apiKey);
+      } catch {
+        // Allow empty API key for custom provider
+        if (provider !== 'custom') {
+          return NextResponse.json(
+            { error: 'Failed to decrypt saved API key' },
+            { status: 500 }
+          );
+        }
+        testApiKey = '';
+      }
+
+      if (provider === 'custom') {
+        testBaseUrl = config.baseUrl || '';
+        if (!testBaseUrl) {
+          return NextResponse.json(
+            { error: 'No saved base URL found for custom provider' },
+            { status: 400 }
+          );
+        }
+      }
     }
 
-    if (!testApiKey) {
+    // API key required for OpenAI and Claude
+    if (!testApiKey && provider !== 'custom') {
       return NextResponse.json(
         { error: 'API key is required' },
         { status: 400 }
@@ -117,6 +172,64 @@ async function authenticatedHandler(req: AuthenticatedRequest) {
           { status: 400 }
         );
       }
+    } else if (provider === 'custom') {
+      // Custom: Fetch models from custom OpenAI-compatible endpoint
+      const normalizedUrl = normalizeBaseUrl(testBaseUrl);
+      const modelsEndpoint = normalizedUrl + '/models';
+
+      const headers: Record<string, string> = {};
+      if (testApiKey) {
+        headers['Authorization'] = `Bearer ${testApiKey}`;
+      }
+
+      try {
+        const response = await fetch(modelsEndpoint, {
+          method: 'GET',
+          headers,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.error('Custom provider connection error', { error: errorText });
+          return NextResponse.json(
+            { error: `Failed to connect to custom provider: ${response.status} ${errorText}` },
+            { status: response.status }
+          );
+        }
+
+        const data = await response.json();
+
+        // Handle multiple response formats
+        let modelsList = [];
+        if (Array.isArray(data?.data)) {
+          // OpenAI format: { data: [...] }
+          modelsList = data.data.map((m: any) => ({
+            id: m.id,
+            name: m.name || m.id,
+          }));
+        } else if (Array.isArray(data)) {
+          // Direct array format
+          modelsList = data.map((m: any) => ({
+            id: m.id || m,
+            name: m.name || m.id || m,
+          }));
+        } else {
+          // Unable to parse, but connection successful
+          return NextResponse.json({
+            success: true,
+            models: [],
+            message: 'Connected successfully but could not parse models list. You may need to enter model name manually.',
+          });
+        }
+
+        models = modelsList;
+      } catch (error: any) {
+        logger.error('Custom provider network error', { error: error.message });
+        return NextResponse.json(
+          { error: `Network error connecting to custom provider: ${error.message}` },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -138,7 +251,7 @@ async function authenticatedHandler(req: AuthenticatedRequest) {
 async function unauthenticatedHandler(req: NextRequest) {
   try {
     const body = await req.json();
-    const { provider, apiKey, useSavedKey } = body;
+    const { provider, apiKey, baseUrl, useSavedKey } = body;
 
     // During setup, useSavedKey should not be used (no auth context)
     if (useSavedKey) {
@@ -156,14 +269,32 @@ async function unauthenticatedHandler(req: NextRequest) {
       );
     }
 
-    if (!['openai', 'claude'].includes(provider)) {
+    if (!['openai', 'claude', 'custom'].includes(provider)) {
       return NextResponse.json(
-        { error: 'Invalid provider. Must be "openai" or "claude"' },
+        { error: 'Invalid provider. Must be "openai", "claude", or "custom"' },
         { status: 400 }
       );
     }
 
-    if (!apiKey) {
+    // Custom provider requires baseUrl
+    if (provider === 'custom') {
+      if (!baseUrl) {
+        return NextResponse.json(
+          { error: 'Base URL is required for custom provider' },
+          { status: 400 }
+        );
+      }
+
+      if (!isValidBaseUrl(baseUrl)) {
+        return NextResponse.json(
+          { error: 'Invalid base URL format. Must start with http:// or https://' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // API key required for OpenAI and Claude
+    if (!apiKey && provider !== 'custom') {
       return NextResponse.json(
         { error: 'API key is required' },
         { status: 400 }
@@ -230,6 +361,64 @@ async function unauthenticatedHandler(req: NextRequest) {
         return NextResponse.json(
           { error: 'Invalid Claude API key or connection failed' },
           { status: 400 }
+        );
+      }
+    } else if (provider === 'custom') {
+      // Custom: Fetch models from custom OpenAI-compatible endpoint
+      const normalizedUrl = normalizeBaseUrl(baseUrl);
+      const modelsEndpoint = normalizedUrl + '/models';
+
+      const headers: Record<string, string> = {};
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      try {
+        const response = await fetch(modelsEndpoint, {
+          method: 'GET',
+          headers,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.error('Custom provider connection error', { error: errorText });
+          return NextResponse.json(
+            { error: `Failed to connect to custom provider: ${response.status} ${errorText}` },
+            { status: response.status }
+          );
+        }
+
+        const data = await response.json();
+
+        // Handle multiple response formats
+        let modelsList = [];
+        if (Array.isArray(data?.data)) {
+          // OpenAI format: { data: [...] }
+          modelsList = data.data.map((m: any) => ({
+            id: m.id,
+            name: m.name || m.id,
+          }));
+        } else if (Array.isArray(data)) {
+          // Direct array format
+          modelsList = data.map((m: any) => ({
+            id: m.id || m,
+            name: m.name || m.id || m,
+          }));
+        } else {
+          // Unable to parse, but connection successful
+          return NextResponse.json({
+            success: true,
+            models: [],
+            message: 'Connected successfully but could not parse models list. You may need to enter model name manually.',
+          });
+        }
+
+        models = modelsList;
+      } catch (error: any) {
+        logger.error('Custom provider network error', { error: error.message });
+        return NextResponse.json(
+          { error: `Network error connecting to custom provider: ${error.message}` },
+          { status: 500 }
         );
       }
     }

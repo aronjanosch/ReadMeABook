@@ -150,6 +150,7 @@ export default function AdminSettings() {
   const [bookdateProvider, setBookdateProvider] = useState<string>('openai');
   const [bookdateApiKey, setBookdateApiKey] = useState<string>('');
   const [bookdateModel, setBookdateModel] = useState<string>('');
+  const [bookdateBaseUrl, setBookdateBaseUrl] = useState<string>('');
   const [bookdateEnabled, setBookdateEnabled] = useState<boolean>(true);
   const [bookdateConfigured, setBookdateConfigured] = useState<boolean>(false);
   const [bookdateModels, setBookdateModels] = useState<{ id: string; name: string }[]>([]);
@@ -341,6 +342,7 @@ export default function AdminSettings() {
       if (data.config) {
         setBookdateProvider(data.config.provider || 'openai');
         setBookdateModel(data.config.model || '');
+        setBookdateBaseUrl(data.config.baseUrl || '');
         setBookdateEnabled(data.config.isEnabled !== false); // Default to true
         setBookdateConfigured(data.config.isVerified || false);
       }
@@ -352,10 +354,18 @@ export default function AdminSettings() {
   const handleTestBookdateConnection = async () => {
     const hasApiKey = bookdateApiKey.trim().length > 0;
 
-    // Allow testing with saved API key if already configured
-    if (!hasApiKey && !bookdateConfigured) {
-      setMessage({ type: 'error', text: 'Please enter an API key' });
-      return;
+    // Validation
+    if (bookdateProvider === 'custom') {
+      if (!bookdateBaseUrl.trim()) {
+        setMessage({ type: 'error', text: 'Please enter a base URL for custom provider' });
+        return;
+      }
+    } else {
+      // Allow testing with saved API key if already configured
+      if (!hasApiKey && !bookdateConfigured) {
+        setMessage({ type: 'error', text: 'Please enter an API key' });
+        return;
+      }
     }
 
     setTestingBookdate(true);
@@ -369,8 +379,13 @@ export default function AdminSettings() {
       // Include API key if user entered a new one, otherwise use saved key
       if (hasApiKey) {
         payload.apiKey = bookdateApiKey;
-      } else {
+      } else if (bookdateProvider !== 'custom') {
         payload.useSavedKey = true;
+      }
+
+      // Include baseUrl for custom provider
+      if (bookdateProvider === 'custom') {
+        payload.baseUrl = bookdateBaseUrl;
       }
 
       const response = await fetchWithAuth('/api/bookdate/test-connection', {
@@ -406,17 +421,26 @@ export default function AdminSettings() {
       return;
     }
 
-    // Only require API key if not already configured OR if user entered one
-    const hasApiKey = bookdateApiKey.trim().length > 0;
-    if (!bookdateConfigured && !hasApiKey) {
-      setMessage({ type: 'error', text: 'Please enter an API key for initial setup' });
-      return;
+    // Validate: baseUrl required for custom provider
+    if (bookdateProvider === 'custom') {
+      if (!bookdateBaseUrl.trim()) {
+        setMessage({ type: 'error', text: 'Please enter a base URL for custom provider' });
+        return;
+      }
+    } else {
+      // Only require API key if not already configured OR if user entered one
+      const hasApiKey = bookdateApiKey.trim().length > 0;
+      if (!bookdateConfigured && !hasApiKey) {
+        setMessage({ type: 'error', text: 'Please enter an API key for initial setup' });
+        return;
+      }
     }
 
     setSaving(true);
     setMessage(null);
 
     try {
+      const hasApiKey = bookdateApiKey.trim().length > 0;
       const payload: any = {
         provider: bookdateProvider,
         model: bookdateModel,
@@ -426,6 +450,11 @@ export default function AdminSettings() {
       // Only include API key if user entered a new one
       if (hasApiKey) {
         payload.apiKey = bookdateApiKey;
+      }
+
+      // Include baseUrl for custom provider
+      if (bookdateProvider === 'custom') {
+        payload.baseUrl = bookdateBaseUrl;
       }
 
       const response = await fetchWithAuth('/api/bookdate/config', {
@@ -2325,18 +2354,45 @@ export default function AdminSettings() {
                     onChange={(e) => {
                       setBookdateProvider(e.target.value);
                       setBookdateModels([]);
+                      setBookdateBaseUrl('');
                     }}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="openai">OpenAI</option>
                     <option value="claude">Claude (Anthropic)</option>
+                    <option value="custom">Custom (OpenAI-compatible)</option>
                   </select>
                 </div>
+
+                {/* Base URL Input - Show for Custom Provider */}
+                {bookdateProvider === 'custom' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Base URL <span className="text-red-500">*</span>
+                    </label>
+                    <Input
+                      type="text"
+                      value={bookdateBaseUrl}
+                      onChange={(e) => {
+                        setBookdateBaseUrl(e.target.value);
+                        setBookdateModels([]);
+                      }}
+                      placeholder="http://localhost:11434/v1"
+                    />
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Examples:
+                      <br />• Ollama: <code>http://localhost:11434/v1</code>
+                      <br />• LM Studio: <code>http://localhost:1234/v1</code>
+                      <br />• vLLM: <code>http://localhost:8000/v1</code>
+                    </p>
+                  </div>
+                )}
 
                 {/* API Key */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    API Key
+                    {bookdateProvider === 'custom' ? 'API Key (Optional for local models)' : 'API Key'}
+                    {bookdateProvider !== 'custom' && <span className="text-red-500 ml-1">*</span>}
                   </label>
                   <Input
                     type="password"
@@ -2346,13 +2402,17 @@ export default function AdminSettings() {
                       setBookdateModels([]);
                     }}
                     placeholder={
-                      bookdateConfigured
-                        ? '••••••••••••••••'
-                        : (bookdateProvider === 'openai' ? 'sk-...' : 'sk-ant-...')
+                      bookdateProvider === 'custom'
+                        ? 'Leave blank for local models'
+                        : bookdateConfigured
+                          ? '••••••••••••••••'
+                          : (bookdateProvider === 'openai' ? 'sk-...' : 'sk-ant-...')
                     }
                   />
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    The API key is stored securely and encrypted. Leave blank to keep existing key.
+                    {bookdateProvider === 'custom'
+                      ? 'Optional: Leave blank if your endpoint does not require authentication (e.g., Ollama, LM Studio)'
+                      : 'The API key is stored securely and encrypted. Leave blank to keep existing key.'}
                   </p>
                 </div>
 
@@ -2360,7 +2420,11 @@ export default function AdminSettings() {
                 <Button
                   onClick={handleTestBookdateConnection}
                   loading={testingBookdate}
-                  disabled={!bookdateApiKey.trim() && !bookdateConfigured}
+                  disabled={
+                    bookdateProvider === 'custom'
+                      ? !bookdateBaseUrl.trim()
+                      : (!bookdateApiKey.trim() && !bookdateConfigured)
+                  }
                   variant="outline"
                   className="w-full"
                 >
