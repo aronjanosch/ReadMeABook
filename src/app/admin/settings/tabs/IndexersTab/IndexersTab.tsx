@@ -5,55 +5,51 @@
 
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { IndexerManagement } from '@/components/admin/indexers/IndexerManagement';
 import { FlagConfigRow } from '@/components/admin/FlagConfigRow';
 import { IndexerFlagConfig } from '@/lib/utils/ranking-algorithm';
-
-interface SavedIndexerConfig {
-  id: number;
-  name: string;
-  priority: number;
-  seedingTimeMinutes: number;
-  rssEnabled: boolean;
-  categories: number[];
-}
+import { useIndexersSettings } from './useIndexersSettings';
+import type { Settings, SavedIndexerConfig } from '../../lib/types';
 
 interface IndexersTabProps {
-  settings: {
-    prowlarr: {
-      url: string;
-      apiKey: string;
-    };
-  };
-  originalSettings?: {
-    prowlarr: {
-      url: string;
-      apiKey: string;
-    };
-  } | null;
+  settings: Settings;
   indexers: SavedIndexerConfig[];
   flagConfigs: IndexerFlagConfig[];
-  onSettingsChange: (settings: any) => void;
+  onChange: (settings: Settings) => void;
   onIndexersChange: (indexers: SavedIndexerConfig[]) => void;
   onFlagConfigsChange: (configs: IndexerFlagConfig[]) => void;
-  onValidationChange: (validated: any) => void;
-  validated: { prowlarr?: boolean };
+  onValidationChange: (isValid: boolean) => void;
+  onRefreshIndexers?: () => Promise<void>;
 }
 
 export function IndexersTab({
   settings,
-  originalSettings,
   indexers,
   flagConfigs,
-  onSettingsChange,
+  onChange,
   onIndexersChange,
   onFlagConfigsChange,
   onValidationChange,
-  validated,
+  onRefreshIndexers,
 }: IndexersTabProps) {
+  const { testing, testResult, testConnection } = useIndexersSettings({
+    prowlarrUrl: settings.prowlarr.url,
+    prowlarrApiKey: settings.prowlarr.apiKey,
+    onValidationChange,
+    onRefreshIndexers,
+  });
+
+  // Auto-load indexers when component mounts if prowlarr is configured
+  useEffect(() => {
+    if (settings.prowlarr.url && settings.prowlarr.apiKey && onRefreshIndexers) {
+      onRefreshIndexers();
+    }
+    // Only run on mount, not when settings change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
@@ -73,14 +69,11 @@ export function IndexersTab({
           type="url"
           value={settings.prowlarr.url}
           onChange={(e) => {
-            onSettingsChange({
+            onChange({
               ...settings,
               prowlarr: { ...settings.prowlarr, url: e.target.value },
             });
-            // Only invalidate if URL actually changed from original
-            if (originalSettings && e.target.value !== originalSettings.prowlarr.url) {
-              onValidationChange({ ...validated, prowlarr: false });
-            }
+            onValidationChange(false);
           }}
           placeholder="http://localhost:9696"
         />
@@ -94,20 +87,38 @@ export function IndexersTab({
           type="password"
           value={settings.prowlarr.apiKey}
           onChange={(e) => {
-            onSettingsChange({
+            onChange({
               ...settings,
               prowlarr: { ...settings.prowlarr, apiKey: e.target.value },
             });
-            // Only invalidate if API key actually changed from original
-            if (originalSettings && e.target.value !== originalSettings.prowlarr.apiKey) {
-              onValidationChange({ ...validated, prowlarr: false });
-            }
+            onValidationChange(false);
           }}
           placeholder="Enter API key"
         />
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Found in Prowlarr Settings → General → Security → API Key
         </p>
+      </div>
+
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+        <Button
+          onClick={testConnection}
+          loading={testing}
+          disabled={!settings.prowlarr.url || !settings.prowlarr.apiKey}
+          variant="outline"
+          className="w-full"
+        >
+          Test Connection
+        </Button>
+        {testResult && (
+          <div className={`mt-3 p-3 rounded-lg text-sm ${
+            testResult.success
+              ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
+              : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+          }`}>
+            {testResult.message}
+          </div>
+        )}
       </div>
 
       <div className="border-t border-gray-200 dark:border-gray-700 pt-6">

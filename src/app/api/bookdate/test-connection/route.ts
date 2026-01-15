@@ -191,9 +191,10 @@ async function authenticatedHandler(req: AuthenticatedRequest) {
         if (!response.ok) {
           const errorText = await response.text();
           logger.error('Custom provider connection error', { error: errorText });
+          // Return 400 (not the external service's status) to prevent triggering logout on 401
           return NextResponse.json(
             { error: `Failed to connect to custom provider: ${response.status} ${errorText}` },
-            { status: response.status }
+            { status: 400 }
           );
         }
 
@@ -382,9 +383,10 @@ async function unauthenticatedHandler(req: NextRequest) {
         if (!response.ok) {
           const errorText = await response.text();
           logger.error('Custom provider connection error', { error: errorText });
+          // Return 400 (not the external service's status) to prevent triggering logout on 401
           return NextResponse.json(
             { error: `Failed to connect to custom provider: ${response.status} ${errorText}` },
-            { status: response.status }
+            { status: 400 }
           );
         }
 

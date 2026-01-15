@@ -82,6 +82,9 @@ export class OIDCAuthProvider implements IAuthProvider {
   async initiateLogin(): Promise<LoginInitiation> {
     try {
       const client = await this.getClient();
+      // Clean up expired states first
+      this.cleanupExpiredStates();
+
       const state = generators.state();
       const nonce = generators.nonce();
       const codeVerifier = generators.codeVerifier();
@@ -94,9 +97,6 @@ export class OIDCAuthProvider implements IAuthProvider {
         codeVerifier,
         timestamp: Date.now(),
       });
-
-      // Clean up expired states
-      this.cleanupExpiredStates();
 
       // Generate authorization URL
       const redirectUrl = client.authorizationUrl({

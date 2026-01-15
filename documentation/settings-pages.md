@@ -1,8 +1,66 @@
 # Settings Pages
 
-**Status:** ✅ Implemented
+**Status:** ✅ Implemented | ♻️ Refactored (Jan 2026)
 
 Single tabbed interface for admins to view/modify system configuration post-setup with mandatory validation before saving.
+
+## Architecture (Refactored Jan 2026)
+
+**Original:** Monolithic 2,971-line component
+**Current:** Modular architecture with 89% code reduction (2,971 → 325 lines)
+
+**Structure:**
+```
+src/app/admin/settings/
+├── page.tsx                      # Shell component (325 lines)
+├── lib/
+│   ├── types.ts                  # Shared TypeScript interfaces
+│   └── helpers.ts                # Business logic (206 lines)
+├── hooks/
+│   └── useSettings.ts            # Global settings hook
+└── tabs/                         # Feature modules
+    ├── LibraryTab/               # Plex/Audiobookshelf config
+    │   ├── LibraryTab.tsx
+    │   ├── useLibrarySettings.ts
+    │   ├── PlexSection.tsx
+    │   ├── AudiobookshelfSection.tsx
+    │   └── index.ts
+    ├── AuthTab/                  # Authentication (OIDC + Manual)
+    │   ├── AuthTab.tsx
+    │   ├── useAuthSettings.ts
+    │   ├── OIDCSection.tsx
+    │   ├── RegistrationSection.tsx
+    │   ├── PendingUsersTable.tsx
+    │   └── index.ts
+    ├── IndexersTab/              # Prowlarr/indexers
+    │   ├── IndexersTab.tsx
+    │   ├── useIndexersSettings.ts
+    │   └── index.ts
+    ├── DownloadTab/              # qBittorrent/SABnzbd
+    │   ├── DownloadTab.tsx
+    │   ├── useDownloadSettings.ts
+    │   └── index.ts
+    ├── PathsTab/                 # Directory paths
+    │   ├── PathsTab.tsx
+    │   ├── usePathsSettings.ts
+    │   └── index.ts
+    ├── EbookTab/                 # E-book sidecar
+    │   ├── EbookTab.tsx
+    │   ├── useEbookSettings.ts
+    │   └── index.ts
+    └── BookDateTab/              # AI recommendations
+        ├── BookDateTab.tsx
+        ├── useBookDateSettings.ts
+        └── index.ts
+```
+
+**Benefits:**
+- Single Responsibility: Each tab manages its own state/logic
+- Testability: Individual tabs can be unit tested
+- Maintainability: Changes to one feature don't affect others
+- Performance: Lazy loading possible (future optimization)
+- Reusability: Custom hooks can be used elsewhere
+- Code Quality: Follows React best practices
 
 ## Sections
 

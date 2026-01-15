@@ -1,0 +1,201 @@
+name: Backend Tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      send_notification:
+        description: "Whether to send Discord notification"
+        type: boolean
+        default: true
+    secrets:
+      WEBHOOK_URL:
+        description: "Discord webhook URL"
+        required: false
+    outputs:
+      success:
+        description: "Whether tests passed"
+        value: ${{ jobs.test.outputs.success }}
+      total:
+        description: "Total number of tests"
+        value: ${{ jobs.test.outputs.total }}
+      passed:
+        description: "Number of passed tests"
+        value: ${{ jobs.test.outputs.passed }}
+      failed:
+        description: "Number of failed tests"
+        value: ${{ jobs.test.outputs.failed }}
+      duration:
+        description: "Test duration in seconds"
+        value: ${{ jobs.test.outputs.duration }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      success: ${{ steps.test-results.outputs.success }}
+      total: ${{ steps.test-results.outputs.total }}
+      passed: ${{ steps.test-results.outputs.passed }}
+      failed: ${{ steps.test-results.outputs.failed }}
+      duration: ${{ steps.test-results.outputs.duration }}
+      test_files: ${{ steps.test-results.outputs.test_files }}
+      test_files_passed: ${{ steps.test-results.outputs.test_files_passed }}
+      test_files_failed: ${{ steps.test-results.outputs.test_files_failed }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        id: run-tests
+        continue-on-error: true
+        run: |
+          START_TIME=$(date +%s)
+          npm test -- --reporter=json --outputFile=test-results.json 2>&1 | tee test-output.txt
+          END_TIME=$(date +%s)
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          echo "start_time=$(date -u +"%H:%M:%S")" >> $GITHUB_OUTPUT
+          echo "elapsed=$((END_TIME - START_TIME))" >> $GITHUB_OUTPUT
+
+      - name: Parse test results
+        id: test-results
+        if: always()
+        run: |
+          if [ -f test-results.json ]; then
+            TOTAL=$(jq '.numTotalTests // 0' test-results.json)
+            PASSED=$(jq '.numPassedTests // 0' test-results.json)
+            FAILED=$(jq '.numFailedTests // 0' test-results.json)
+            TEST_FILES=$(jq '.numTotalTestSuites // 0' test-results.json)
+            TEST_FILES_PASSED=$(jq '.numPassedTestSuites // 0' test-results.json)
+            TEST_FILES_FAILED=$(jq '.numFailedTestSuites // 0' test-results.json)
+            DURATION=$(jq '((.testResults | map(.endTime) | max) - (.testResults | map(.startTime) | min)) / 1000 | . * 100 | floor / 100' test-results.json 2>/dev/null || echo "0")
+            SUCCESS=$([ "$FAILED" -eq 0 ] && echo "true" || echo "false")
+          else
+            TOTAL=0
+            PASSED=0
+            FAILED=1
+            TEST_FILES=0
+            TEST_FILES_PASSED=0
+            TEST_FILES_FAILED=1
+            DURATION=0
+            SUCCESS="false"
+          fi
+          
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "passed=$PASSED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "duration=$DURATION" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
+          echo "test_files_passed=$TEST_FILES_PASSED" >> $GITHUB_OUTPUT
+          echo "test_files_failed=$TEST_FILES_FAILED" >> $GITHUB_OUTPUT
+          
+          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$SUCCESS" = "true" ]; then
+            echo "### ✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Files | $TEST_FILES_PASSED passed ($TEST_FILES) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | $PASSED passed ($TOTAL) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Duration | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send Discord notification
+        if: always() && (inputs.send_notification != false)
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "No webhook URL provided, skipping notification"
+            exit 0
+          fi
+          
+          SUCCESS="${{ steps.test-results.outputs.success }}"
+          TOTAL="${{ steps.test-results.outputs.total }}"
+          PASSED="${{ steps.test-results.outputs.passed }}"
+          FAILED="${{ steps.test-results.outputs.failed }}"
+          DURATION="${{ steps.test-results.outputs.duration }}"
+          TEST_FILES="${{ steps.test-results.outputs.test_files }}"
+          TEST_FILES_PASSED="${{ steps.test-results.outputs.test_files_passed }}"
+          TEST_FILES_FAILED="${{ steps.test-results.outputs.test_files_failed }}"
+          
+          if [ "$SUCCESS" = "true" ]; then
+            COLOR=5763719
+            TITLE="✅ Tests Passed"
+            DESCRIPTION="All tests completed successfully for **ReadMeABook**"
+            TEST_FILES_VALUE="$TEST_FILES_PASSED passed ($TEST_FILES)"
+            TESTS_VALUE="$PASSED passed ($TOTAL)"
+          else
+            COLOR=15548997
+            TITLE="❌ Tests Failed"
+            DESCRIPTION="Some tests failed for **ReadMeABook**"
+            TEST_FILES_VALUE="$TEST_FILES_PASSED passed, $TEST_FILES_FAILED failed ($TEST_FILES)"
+            TESTS_VALUE="$PASSED passed, $FAILED failed ($TOTAL)"
+          fi
+          
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"embeds\": [{
+                \"title\": \"$TITLE\",
+                \"description\": \"$DESCRIPTION\",
+                \"color\": $COLOR,
+                \"fields\": [
+                  {
+                    \"name\": \"📁 Test Files\",
+                    \"value\": \"\`$TEST_FILES_VALUE\`\",
+                    \"inline\": true
+                  },
+                  {
+                    \"name\": \"🧪 Tests\",
+                    \"value\": \"\`$TESTS_VALUE\`\",
+                    \"inline\": true
+                  },
+                  {
+                    \"name\": \"⏱️ Duration\",
+                    \"value\": \"\`${DURATION}s\`\",
+                    \"inline\": true
+                  },
+                  {
+                    \"name\": \"🌿 Branch\",
+                    \"value\": \"\`${{ github.ref_name }}\`\",
+                    \"inline\": true
+                  },
+                  {
+                    \"name\": \"📋 Commit\",
+                    \"value\": \"[\`$(echo ${{ github.sha }} | cut -c1-7)\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\",
+                    \"inline\": true
+                  },
+                  {
+                    \"name\": \"🔗 Workflow\",
+                    \"value\": \"[View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\",
+                    \"inline\": true
+                  }
+                ],
+                \"footer\": {
+                  \"text\": \"ReadMeABook CI/CD • Test Suite\"
+                },
+                \"timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"
+              }]
+            }" \
+            "$WEBHOOK_URL"
+
+      - name: Fail if tests failed
+        if: steps.test-results.outputs.success != 'true'
+        run: exit 1

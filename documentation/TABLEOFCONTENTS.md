@@ -11,7 +11,8 @@
 ## Configuration & Setup
 - **First-time setup wizard** → [setup-wizard.md](setup-wizard.md)
 - **Settings management, encryption** → [backend/services/config.md](backend/services/config.md)
-- **Settings UI (Plex, Prowlarr, paths)** → [settings-pages.md](settings-pages.md)
+- **Settings UI (modular architecture, all tabs)** → [settings-pages.md](settings-pages.md)
+- **Settings architecture refactoring (Jan 2026)** → [settings-pages.md](settings-pages.md#architecture-refactored-jan-2026)
 - **Setup middleware & status check** → [backend/middleware.md](backend/middleware.md)
 - **Environment variables, PUBLIC_URL, OAuth configuration** → [backend/services/environment.md](backend/services/environment.md)
 
@@ -80,6 +81,9 @@
 - **Unified container (all-in-one)** → [deployment/unified.md](deployment/unified.md)
 - **Environment variables, volumes** → [deployment/docker.md](deployment/docker.md)
 - **Database setup (Prisma), migrations** → [deployment/docker.md](deployment/docker.md)
+
+## Testing
+- **Backend unit test framework, scripts** [testing.md](testing.md)
 
 ## Feature-Specific Lookups
 **"How do I add a new audiobook?"** → [integrations/audible.md](integrations/audible.md) (scraping), [phase3/README.md](phase3/README.md) (automation)

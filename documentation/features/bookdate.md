@@ -390,6 +390,22 @@ Personalized audiobook discovery using OpenAI/Claude APIs. Admin configures AI p
   - Consistent with recommendations endpoint filtering behavior
 - Files updated: `src/app/api/bookdate/generate/route.ts:147-157`
 
+**8. Test Connection with Bad Custom LLM Credentials Logs User Out**
+- Issue: Testing custom LLM connection with invalid credentials causes user to be logged out instead of showing error
+- User Experience: "When I test connection with wrong API key, I get logged out of ReadMeABook instead of seeing an error message"
+- Cause: Custom LLM provider returns 401 Unauthorized for invalid credentials
+  - Test-connection endpoint passed through external service's 401 status code
+  - `fetchWithAuth()` utility intercepts ALL 401 responses, assuming they indicate expired user session
+  - Triggers automatic token refresh, then logout if refresh fails or still 401
+  - User logged out of application when only external service credentials were invalid
+- Fix: Return 400 Bad Request instead of passing through external service status codes
+  - Changed lines 196, 387 in `src/app/api/bookdate/test-connection/route.ts`
+  - Now returns `{ status: 400 }` for all custom provider connection failures
+  - Reserve 401 status exclusively for application authentication issues
+  - External service credential failures are client errors (400), not auth errors (401)
+  - Added tests to verify 401 from external provider returns 400 to client
+- Files updated: `src/app/api/bookdate/test-connection/route.ts:190-197,382-389`, `tests/api/bookdate-test-connection.routes.test.ts:254-294`
+
 ## Related
 
 - Full requirements: [features/bookdate-prd.md](bookdate-prd.md)

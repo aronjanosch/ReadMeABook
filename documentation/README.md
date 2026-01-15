@@ -66,6 +66,9 @@ External integrations: Plex (auth + library), Prowlarr/Jackett (indexers), qBitt
 **Deployment:**
 - [deployment/docker.md](deployment/docker.md) - Docker Compose, volumes, env vars
 
+**Testing:**
+- [testing.md](testing.md) - Backend unit tests, scripts
+
 ## Development Phases
 ✅ Phase 1: Foundation (auth, database, setup wizard)
 ✅ Phase 2: User features (discovery, requests, dashboard)

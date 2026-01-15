@@ -13,7 +13,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+    name: Run Tests
+    uses: ./.github/workflows/run-tests.yml
+    secrets:
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,3 +101,43 @@ jobs:
           echo "  -v readmeabook-data:/var/lib/postgresql/data \\" >> $GITHUB_STEP_SUMMARY
           echo "  ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Send Discord notification
+        if: github.event_name != 'pull_request' && success()
+        run: |
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d '{
+              "embeds": [{
+                "title": "📦 Docker Image Published",
+                "description": "A new version of **ReadMeABook** has been built and published to GitHub Container Registry.",
+                "color": 5763719,
+                "fields": [
+                  {
+                    "name": "🏷️ Image Tag",
+                    "value": "`sha-${{ steps.version.outputs.git_commit }}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "🌿 Branch",
+                    "value": "`${{ github.ref_name }}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "📋 Commit",
+                    "value": "[`${{ steps.version.outputs.git_commit }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})",
+                    "inline": true
+                  },
+                  {
+                    "name": "📥 Pull Command",
+                    "value": "```docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.version.outputs.git_commit }}```",
+                    "inline": false
+                  }
+                ],
+                "footer": {
+                  "text": "ReadMeABook CI/CD • Built with GitHub Actions"
+                },
+                "timestamp": "${{ steps.version.outputs.build_date }}"
+              }]
+            }' \
+            ${{ secrets.WEBHOOK_URL }}
