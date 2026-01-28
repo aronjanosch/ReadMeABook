@@ -339,6 +339,55 @@ describe('processOrganizeFiles', () => {
       expect.stringContaining('File organization failed')
     );
   });
+
+  it('generates and stores filesHash after successful organization', async () => {
+    prismaMock.request.update.mockResolvedValue({});
+    prismaMock.audiobook.findUnique.mockResolvedValue({
+      id: 'a-hash-1',
+      title: 'Book With Hash',
+      author: 'Author',
+      narrator: null,
+      coverArtUrl: null,
+      audibleAsin: 'ASIN-HASH',
+    });
+    organizerMock.organize.mockResolvedValue({
+      success: true,
+      targetPath: '/media/Author/Book',
+      filesMovedCount: 3,
+      errors: [],
+      audioFiles: [
+        '/media/Author/Book/Chapter 01.mp3',
+        '/media/Author/Book/Chapter 02.mp3',
+        '/media/Author/Book/Chapter 03.mp3',
+      ],
+    });
+    prismaMock.audiobook.update.mockResolvedValue({});
+    prismaMock.request.update.mockResolvedValue({});
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('false');
+
+    const { processOrganizeFiles } = await import('@/lib/processors/organize-files.processor');
+    const result = await processOrganizeFiles({
+      requestId: 'req-hash-1',
+      audiobookId: 'a-hash-1',
+      downloadPath: '/downloads/book',
+      jobId: 'job-hash-1',
+    });
+
+    expect(result.success).toBe(true);
+
+    // Verify filesHash was included in the audiobook update
+    expect(prismaMock.audiobook.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'a-hash-1' },
+        data: expect.objectContaining({
+          filePath: '/media/Author/Book',
+          filesHash: expect.stringMatching(/^[a-f0-9]{64}$/), // SHA256 hash format
+          status: 'completed',
+        }),
+      })
+    );
+  });
 });
 
 

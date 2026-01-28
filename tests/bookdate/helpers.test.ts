@@ -342,6 +342,307 @@ describe('BookDate helpers', () => {
     expect(plexMock.getServerAccessToken).not.toHaveBeenCalled();
   });
 
+  it('returns cached books when rating enrichment user lookup fails', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({ libraryId: 'plex-lib' });
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ plexId: 'plex-1' })
+      .mockResolvedValueOnce(null);
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: '5',
+      },
+    ]);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'full');
+
+    expect(result).toEqual([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+  });
+
+  it('returns cached books when server access token is unavailable', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({
+      libraryId: 'plex-lib',
+      serverUrl: 'http://plex',
+      machineIdentifier: 'machine',
+    });
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ plexId: 'plex-1' })
+      .mockResolvedValueOnce({ authToken: 'enc-token', plexId: 'plex-1', role: 'user' });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: null,
+      },
+    ]);
+    encryptionMock.decrypt.mockReturnValue('user-token');
+    plexMock.getServerAccessToken.mockResolvedValue(null);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'full');
+
+    expect(result).toEqual([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+    expect(plexMock.getServerAccessToken).toHaveBeenCalledWith('machine', 'user-token');
+  });
+
+  it('falls back to cached books when user ratings fetch is unauthorized', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({
+      libraryId: 'plex-lib',
+      serverUrl: 'http://plex',
+      machineIdentifier: 'machine',
+    });
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ plexId: 'plex-1' })
+      .mockResolvedValueOnce({ authToken: 'enc-token', plexId: 'plex-1', role: 'user' });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: null,
+      },
+    ]);
+    encryptionMock.decrypt.mockReturnValue('user-token');
+    plexMock.getServerAccessToken.mockResolvedValue('server-token');
+    const unauthorizedError = new Error('Unauthorized');
+    (unauthorizedError as Error & { response?: { status: number } }).response = { status: 401 };
+    plexMock.getLibraryContent.mockRejectedValue(unauthorizedError);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'full');
+
+    expect(result).toEqual([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+  });
+
+  it('falls back to cached books when user ratings fetch fails', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({
+      libraryId: 'plex-lib',
+      serverUrl: 'http://plex',
+      machineIdentifier: 'machine',
+    });
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ plexId: 'plex-1' })
+      .mockResolvedValueOnce({ authToken: 'enc-token', plexId: 'plex-1', role: 'user' });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: null,
+      },
+    ]);
+    encryptionMock.decrypt.mockReturnValue('user-token');
+    plexMock.getServerAccessToken.mockResolvedValue('server-token');
+    plexMock.getLibraryContent.mockRejectedValue(new Error('fetch failed'));
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'full');
+
+    expect(result).toEqual([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+  });
+
+  it('returns cached books when enrichment throws an error', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({ libraryId: 'plex-lib' });
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ plexId: 'plex-1' })
+      .mockRejectedValueOnce(new Error('db down'));
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: '6',
+      },
+    ]);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'full');
+
+    expect(result).toEqual([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+  });
+
+  it('falls back to full library when favorites are empty', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('abs-lib-1');
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ bookDateFavoriteBookIds: null })
+      .mockResolvedValueOnce({ plexId: 'abs-1' });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: null,
+      },
+    ]);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'favorites');
+
+    expect(result).toEqual([
+      {
+        title: 'Book',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+  });
+
+  it('returns empty favorites when audiobookshelf library id is missing', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue(null);
+    prismaMock.user.findUnique.mockResolvedValueOnce({
+      bookDateFavoriteBookIds: JSON.stringify(['book-1']),
+    });
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'favorites');
+
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty favorites when plex library id is missing', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({ libraryId: null });
+    prismaMock.user.findUnique.mockResolvedValueOnce({
+      bookDateFavoriteBookIds: JSON.stringify(['book-1']),
+    });
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'favorites');
+
+    expect(result).toEqual([]);
+  });
+
+  it('returns audiobookshelf favorites without ratings', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('abs-lib-1');
+    prismaMock.user.findUnique.mockResolvedValueOnce({
+      bookDateFavoriteBookIds: JSON.stringify(['book-1']),
+    });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Favorite',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: '8',
+      },
+    ]);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'favorites');
+
+    expect(result).toEqual([
+      {
+        title: 'Favorite',
+        author: 'Author',
+        narrator: undefined,
+        rating: undefined,
+      },
+    ]);
+  });
+
+  it('returns plex favorites with cached ratings for local admins', async () => {
+    configMock.getBackendMode.mockResolvedValue('plex');
+    configMock.getPlexConfig.mockResolvedValue({ libraryId: 'plex-lib' });
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ bookDateFavoriteBookIds: JSON.stringify(['book-1']) })
+      .mockResolvedValueOnce({ authToken: null, plexId: 'local-1', role: 'admin' });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Favorite',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: '7',
+      },
+    ]);
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'favorites');
+
+    expect(result).toEqual([
+      {
+        title: 'Favorite',
+        author: 'Author',
+        narrator: undefined,
+        rating: 7,
+      },
+    ]);
+  });
+
+  it('returns empty list when library query fails', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('abs-lib-1');
+    prismaMock.user.findUnique.mockResolvedValueOnce({ plexId: 'abs-1' });
+    prismaMock.plexLibrary.findMany.mockRejectedValue(new Error('db down'));
+
+    const { getUserLibraryBooks } = await import('@/lib/bookdate/helpers');
+    const result = await getUserLibraryBooks('user-1', 'full');
+
+    expect(result).toEqual([]);
+  });
+
   it('builds recent swipe history from prioritized swipes', async () => {
     const now = new Date();
     const older = new Date(now.getTime() - 1000);
@@ -394,6 +695,15 @@ describe('BookDate helpers', () => {
       { title: 'Recent', author: 'Author', action: 'right', markedAsKnown: true },
     ]);
     expect(prismaMock.bookDateSwipe.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns empty swipes when swipe history lookup fails', async () => {
+    prismaMock.bookDateSwipe.findMany.mockRejectedValue(new Error('db down'));
+
+    const { getUserRecentSwipes } = await import('@/lib/bookdate/helpers');
+    const result = await getUserRecentSwipes('user-1', 5);
+
+    expect(result).toEqual([]);
   });
 
   it('builds AI prompt with mapped swipe actions', async () => {
@@ -456,6 +766,33 @@ describe('BookDate helpers', () => {
       { title: 'Rejected', author: 'Author', user_action: 'rejected' },
       { title: 'Dismissed', author: 'Author', user_action: 'dismissed' },
     ]);
+  });
+
+  it('adds favorites instruction to the AI prompt when using favorites scope', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('abs-lib-1');
+    prismaMock.user.findUnique.mockResolvedValueOnce({
+      bookDateFavoriteBookIds: JSON.stringify(['book-1']),
+    });
+    prismaMock.plexLibrary.findMany.mockResolvedValue([
+      {
+        title: 'Favorite',
+        author: 'Author',
+        narrator: null,
+        plexGuid: 'guid',
+        plexRatingKey: 'rk',
+        userRating: null,
+      },
+    ]);
+    prismaMock.bookDateSwipe.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const { buildAIPrompt } = await import('@/lib/bookdate/helpers');
+    const prompt = await buildAIPrompt('user-1', { libraryScope: 'favorites', customPrompt: null });
+    const parsed = JSON.parse(prompt);
+
+    expect(parsed.instructions).toContain('handpicked');
   });
 
   it('returns cached Audnexus matches without fetching Audible', async () => {
@@ -540,6 +877,14 @@ describe('BookDate helpers', () => {
     await expect(isInLibrary('user-1', 'Title', 'Author')).resolves.toBe(false);
   });
 
+  it('returns false when library matching throws an error', async () => {
+    const { isInLibrary } = await import('@/lib/bookdate/helpers');
+
+    findPlexMatchMock.mockRejectedValueOnce(new Error('match failed'));
+
+    await expect(isInLibrary('user-1', 'Title', 'Author')).resolves.toBe(false);
+  });
+
   it('checks existing requests and swipes', async () => {
     const { isAlreadyRequested, isAlreadySwiped } = await import('@/lib/bookdate/helpers');
 
@@ -558,6 +903,16 @@ describe('BookDate helpers', () => {
     const { callAI } = await import('@/lib/bookdate/helpers');
 
     await expect(callAI('invalid', 'model', 'key', '{}')).rejects.toThrow('Invalid provider');
+  });
+
+  it('throws when decrypting API keys fails for non-custom providers', async () => {
+    encryptionMock.decrypt.mockImplementation(() => {
+      throw new Error('decrypt failed');
+    });
+
+    const { callAI } = await import('@/lib/bookdate/helpers');
+
+    await expect(callAI('openai', 'model', 'enc-key', '{}')).rejects.toThrow('decrypt failed');
   });
 
   it('requires a base URL for custom providers', async () => {
@@ -587,6 +942,22 @@ describe('BookDate helpers', () => {
     );
   });
 
+  it('throws when OpenAI responds with an error', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: vi.fn().mockResolvedValue('Unauthorized'),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    encryptionMock.decrypt.mockReturnValue('api-key');
+
+    const { callAI } = await import('@/lib/bookdate/helpers');
+
+    await expect(callAI('openai', 'model', 'enc-key', '{}')).rejects.toThrow(
+      'OpenAI API error: 401 Unauthorized'
+    );
+  });
+
   it('calls Claude and strips markdown from JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -608,6 +979,22 @@ describe('BookDate helpers', () => {
     );
   });
 
+  it('throws when Claude responds with an error', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: vi.fn().mockResolvedValue('Server down'),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    encryptionMock.decrypt.mockReturnValue('api-key');
+
+    const { callAI } = await import('@/lib/bookdate/helpers');
+
+    await expect(callAI('claude', 'model', 'enc-key', '{}')).rejects.toThrow(
+      'Claude API error: 500 Server down'
+    );
+  });
+
   it('calls custom provider and parses direct JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -625,6 +1012,56 @@ describe('BookDate helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://custom/chat/completions',
       expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('throws when custom providers return non-schema errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: vi.fn().mockResolvedValue('Boom'),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    encryptionMock.decrypt.mockReturnValue('api-key');
+
+    const { callAI } = await import('@/lib/bookdate/helpers');
+
+    await expect(callAI('custom', 'model', 'enc-key', '{}', 'http://custom')).rejects.toThrow(
+      'Custom provider API error: 500 Boom'
+    );
+  });
+
+  it('throws when custom provider retry fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: vi.fn().mockResolvedValue('response_format unsupported'),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: vi.fn().mockResolvedValue('still bad'),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    encryptionMock.decrypt.mockReturnValue('api-key');
+
+    const { callAI } = await import('@/lib/bookdate/helpers');
+
+    await expect(callAI('custom', 'model', 'enc-key', '{}', 'http://custom')).rejects.toThrow(
+      'Custom provider API error: 500 still bad'
+    );
+  });
+
+  it('wraps custom provider fetch failures', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+    encryptionMock.decrypt.mockReturnValue('api-key');
+
+    const { callAI } = await import('@/lib/bookdate/helpers');
+
+    await expect(callAI('custom', 'model', 'enc-key', '{}', 'http://custom')).rejects.toThrow(
+      'Custom provider error: network down'
     );
   });
 
@@ -651,5 +1088,15 @@ describe('BookDate helpers', () => {
 
     expect(result.recommendations).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns null when Audnexus matching throws', async () => {
+    prismaMock.audibleCache.findFirst.mockResolvedValue(null);
+    audibleState.instance.search.mockRejectedValue(new Error('Audible down'));
+
+    const { matchToAudnexus } = await import('@/lib/bookdate/helpers');
+    const result = await matchToAudnexus('Title', 'Author');
+
+    expect(result).toBeNull();
   });
 });

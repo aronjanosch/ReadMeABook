@@ -40,7 +40,7 @@ describe('Admin Prowlarr indexers route', () => {
 
   it('returns indexers with saved config', async () => {
     prowlarrMock.getIndexers.mockResolvedValueOnce([{ id: 1, name: 'Indexer', protocol: 'torrent' }]);
-    configServiceMock.get.mockResolvedValueOnce(JSON.stringify([{ id: 1, name: 'Indexer', priority: 5, seedingTimeMinutes: 10 }]));
+    configServiceMock.get.mockResolvedValueOnce(JSON.stringify([{ id: 1, name: 'Indexer', protocol: 'torrent', priority: 5, seedingTimeMinutes: 10 }]));
     configServiceMock.get.mockResolvedValueOnce('[]');
 
     const { GET } = await import('@/app/api/admin/settings/prowlarr/indexers/route');
@@ -53,7 +53,7 @@ describe('Admin Prowlarr indexers route', () => {
 
   it('saves indexer configuration', async () => {
     authRequest.json.mockResolvedValue({
-      indexers: [{ id: 1, name: 'Indexer', enabled: true, priority: 10, seedingTimeMinutes: 0 }],
+      indexers: [{ id: 1, name: 'Indexer', protocol: 'torrent', enabled: true, priority: 10, seedingTimeMinutes: 0 }],
       flagConfigs: [],
     });
 

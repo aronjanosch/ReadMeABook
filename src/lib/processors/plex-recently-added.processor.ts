@@ -178,6 +178,77 @@ export async function processPlexRecentlyAddedCheck(payload: PlexRecentlyAddedPa
       }
     }
 
+    // For Audiobookshelf: Trigger metadata match for items without ASIN
+    // This ensures ASIN gets populated so items can be matched against requests
+    if (backendMode === 'audiobookshelf') {
+      const { triggerABSItemMatch, getABSItem } = await import('../services/audiobookshelf/api');
+      const { generateFilesHash } = await import('../utils/files-hash');
+
+      const itemsWithoutAsin = recentItems.filter(item => !item.asin && item.externalId);
+
+      if (itemsWithoutAsin.length > 0) {
+        logger.info(`Found ${itemsWithoutAsin.length} recent items without ASIN, attempting file hash matching...`);
+
+        let fileMatchCount = 0;
+        let fuzzyMatchCount = 0;
+
+        for (const item of itemsWithoutAsin) {
+          try {
+            // 1. Fetch full item details to get file list
+            const absItem = await getABSItem(item.externalId);
+
+            // 2. Extract audio filenames and generate hash
+            const audioFilenames = absItem.media?.audioFiles?.map((f: any) => f.metadata?.filename).filter(Boolean) || [];
+            const itemHash = generateFilesHash(audioFilenames);
+
+            // 3. Query database for matching downloaded request
+            let matchedAsin: string | undefined = undefined;
+
+            if (itemHash) {
+              const matchedAudiobook = await prisma.audiobook.findFirst({
+                where: {
+                  filesHash: itemHash,
+                  status: 'completed',
+                },
+                select: {
+                  audibleAsin: true,
+                  title: true,
+                },
+              });
+
+              if (matchedAudiobook?.audibleAsin) {
+                matchedAsin = matchedAudiobook.audibleAsin;
+                logger.info(
+                  `File hash match found for "${item.title}" → ASIN: ${matchedAsin} (from "${matchedAudiobook.title}")`
+                );
+                fileMatchCount++;
+              }
+            }
+
+            // 4. Trigger metadata match (with ASIN if matched, undefined if not)
+            await triggerABSItemMatch(item.externalId, matchedAsin);
+
+            if (matchedAsin) {
+              logger.info(`Triggered metadata match with ASIN ${matchedAsin} for: "${item.title}"`);
+            } else {
+              logger.info(`No file match found, triggering fuzzy metadata match for: "${item.title}"`);
+              fuzzyMatchCount++;
+            }
+
+          } catch (error) {
+            logger.error(
+              `Failed to process metadata match for "${item.title}": ${error instanceof Error ? error.message : 'Unknown error'}`
+            );
+            fuzzyMatchCount++;
+          }
+        }
+
+        logger.info(
+          `Metadata match complete: ${fileMatchCount} file hash matches, ${fuzzyMatchCount} fuzzy matches (ASIN population is async)`
+        );
+      }
+    }
+
     // Check for all non-terminal requests to match
     const matchableRequests = await prisma.request.findMany({
       where: {
@@ -259,15 +330,8 @@ export async function processPlexRecentlyAddedCheck(payload: PlexRecentlyAddedPa
 
             matchedDownloads++;
 
-            // Trigger metadata match for Audiobookshelf items (only for our downloaded requests)
-            if (backendMode === 'audiobookshelf') {
-              const itemId = match.plexGuid; // plexGuid contains the Audiobookshelf item ID
-              const asin = audiobook.audibleAsin || undefined;
-              const matchInfo = asin ? ` with ASIN ${asin}` : '';
-              logger.info(`Triggering metadata match for matched item: ${itemId}${matchInfo}`);
-              const { triggerABSItemMatch } = await import('../services/audiobookshelf/api');
-              await triggerABSItemMatch(itemId, asin);
-            }
+            // Note: Audiobookshelf metadata matching is handled in the file hash phase above
+            // Items without ASIN get file-hash-matched ASIN, items with ASIN already have correct metadata
           }
         } catch (error) {
           logger.error(`Failed to match request ${request.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);

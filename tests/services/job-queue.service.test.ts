@@ -229,7 +229,6 @@ describe('JobQueueService', () => {
     const service = new JobQueueService();
 
     await service.addPlexScanJob('lib-1', true, '/path');
-    await service.addPlexMatchJob('req-1', 'ab-1', 'Title', 'Author');
     await service.addPlexRecentlyAddedJob('sched-1');
     await service.addMonitorRssFeedsJob('sched-2');
     await service.addAudibleRefreshJob('sched-3');
@@ -241,26 +240,23 @@ describe('JobQueueService', () => {
     expect(queueMock.add.mock.calls[0][2].priority).toBe(7);
     expect(queueMock.add.mock.calls[0][1]).toEqual(expect.objectContaining({ libraryId: 'lib-1', partial: true, path: '/path' }));
 
-    expect(queueMock.add.mock.calls[1][0]).toBe('match_plex');
-    expect(queueMock.add.mock.calls[1][2].priority).toBe(6);
+    expect(queueMock.add.mock.calls[1][0]).toBe('plex_recently_added_check');
+    expect(queueMock.add.mock.calls[1][2].priority).toBe(8);
 
-    expect(queueMock.add.mock.calls[2][0]).toBe('plex_recently_added_check');
+    expect(queueMock.add.mock.calls[2][0]).toBe('monitor_rss_feeds');
     expect(queueMock.add.mock.calls[2][2].priority).toBe(8);
 
-    expect(queueMock.add.mock.calls[3][0]).toBe('monitor_rss_feeds');
-    expect(queueMock.add.mock.calls[3][2].priority).toBe(8);
+    expect(queueMock.add.mock.calls[3][0]).toBe('audible_refresh');
+    expect(queueMock.add.mock.calls[3][2].priority).toBe(9);
 
-    expect(queueMock.add.mock.calls[4][0]).toBe('audible_refresh');
-    expect(queueMock.add.mock.calls[4][2].priority).toBe(9);
+    expect(queueMock.add.mock.calls[4][0]).toBe('retry_missing_torrents');
+    expect(queueMock.add.mock.calls[4][2].priority).toBe(7);
 
-    expect(queueMock.add.mock.calls[5][0]).toBe('retry_missing_torrents');
+    expect(queueMock.add.mock.calls[5][0]).toBe('retry_failed_imports');
     expect(queueMock.add.mock.calls[5][2].priority).toBe(7);
 
-    expect(queueMock.add.mock.calls[6][0]).toBe('retry_failed_imports');
-    expect(queueMock.add.mock.calls[6][2].priority).toBe(7);
-
-    expect(queueMock.add.mock.calls[7][0]).toBe('cleanup_seeded_torrents');
-    expect(queueMock.add.mock.calls[7][2].priority).toBe(10);
+    expect(queueMock.add.mock.calls[6][0]).toBe('cleanup_seeded_torrents');
+    expect(queueMock.add.mock.calls[6][2].priority).toBe(10);
   });
 
   it('returns queue stats with safe defaults', async () => {
@@ -543,7 +539,6 @@ describe('JobQueueService', () => {
     expect(processorsMock.processMonitorDownload).toHaveBeenCalled();
     expect(processorsMock.processOrganizeFiles).toHaveBeenCalled();
     expect(processorsMock.processScanPlex).toHaveBeenCalled();
-    expect(processorsMock.processMatchPlex).toHaveBeenCalled();
     expect(processorsMock.processPlexRecentlyAddedCheck).toHaveBeenCalled();
     expect(processorsMock.processMonitorRssFeeds).toHaveBeenCalled();
     expect(processorsMock.processAudibleRefresh).toHaveBeenCalled();

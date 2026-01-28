@@ -248,8 +248,9 @@ export async function deleteRequest(
       const configService = getConfigService();
       const backendMode = await configService.getBackendMode();
 
-      // If backend is Audiobookshelf, delete the library item from ABS
+      // Delete from library backend (ABS or Plex)
       if (backendMode === 'audiobookshelf' && request.audiobook.absItemId) {
+        // Audiobookshelf: delete the library item from ABS
         try {
           const { deleteABSItem } = await import('../services/audiobookshelf/api');
           await deleteABSItem(request.audiobook.absItemId);
@@ -262,6 +263,44 @@ export async function deleteRequest(
             { error: absError instanceof Error ? absError.message : String(absError) }
           );
           // Continue with deletion even if ABS deletion fails
+        }
+      } else if (backendMode === 'plex' && request.audiobook.plexGuid) {
+        // Plex: delete the library item from Plex by ratingKey
+        try {
+          // Query plex_library table to get the ratingKey
+          const plexLibraryRecord = await prisma.plexLibrary.findUnique({
+            where: { plexGuid: request.audiobook.plexGuid },
+            select: { plexRatingKey: true },
+          });
+
+          if (plexLibraryRecord && plexLibraryRecord.plexRatingKey) {
+            const ratingKey = plexLibraryRecord.plexRatingKey;
+
+            // Get Plex config
+            const plexServerUrl = (await configService.get('plex_url')) || '';
+            const plexToken = (await configService.get('plex_token')) || '';
+
+            if (plexServerUrl && plexToken) {
+              const { getPlexService } = await import('../integrations/plex.service');
+              const plexService = getPlexService();
+              await plexService.deleteItem(plexServerUrl, plexToken, ratingKey);
+              logger.info(
+                `Deleted Plex library item ${ratingKey} (plexGuid: ${request.audiobook.plexGuid}) for "${request.audiobook.title}"`
+              );
+            } else {
+              logger.warn('Plex server URL or token not configured, skipping Plex library deletion');
+            }
+          } else {
+            logger.warn(
+              `No plexRatingKey found in plex_library for plexGuid: ${request.audiobook.plexGuid}`
+            );
+          }
+        } catch (plexError) {
+          logger.error(
+            `Error deleting Plex library item (plexGuid: ${request.audiobook.plexGuid})`,
+            { error: plexError instanceof Error ? plexError.message : String(plexError) }
+          );
+          // Continue with deletion even if Plex deletion fails
         }
       }
 

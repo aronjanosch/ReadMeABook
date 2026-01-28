@@ -99,14 +99,26 @@ export default function AdminSettings() {
         // Extract configured indexers (enabled ones)
         const configured = (data.indexers || [])
           .filter((idx: IndexerConfig) => idx.enabled)
-          .map((idx: IndexerConfig) => ({
-            id: idx.id,
-            name: idx.name,
-            priority: idx.priority,
-            seedingTimeMinutes: idx.seedingTimeMinutes,
-            rssEnabled: idx.rssEnabled,
-            categories: idx.categories || [3030],
-          }));
+          .map((idx: IndexerConfig) => {
+            const config: any = {
+              id: idx.id,
+              name: idx.name,
+              protocol: idx.protocol,
+              priority: idx.priority,
+              rssEnabled: idx.rssEnabled,
+              categories: idx.categories || [3030],
+            };
+
+            // Add protocol-specific fields
+            const isTorrent = idx.protocol?.toLowerCase() === 'torrent';
+            if (isTorrent) {
+              config.seedingTimeMinutes = idx.seedingTimeMinutes ?? 0;
+            } else {
+              config.removeAfterProcessing = idx.removeAfterProcessing ?? true;
+            }
+
+            return config;
+          });
         setConfiguredIndexers(configured);
         setOriginalConfiguredIndexers(JSON.parse(JSON.stringify(configured)));
       } else {

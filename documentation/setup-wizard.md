@@ -54,7 +54,7 @@ interface SetupState {
   plexLibraryId: string;
   prowlarrUrl: string;
   prowlarrApiKey: string;
-  prowlarrIndexers: Array<{id: number, name: string, priority: number, seedingTimeMinutes: number, rssEnabled: boolean}>;
+  prowlarrIndexers: Array<{id: number, name: string, protocol: string, priority: number, seedingTimeMinutes?: number, removeAfterProcessing?: boolean, rssEnabled: boolean}>;
   downloadClient: 'qbittorrent' | 'transmission';
   downloadClientUrl: string;
   downloadClientUsername: string;

@@ -36,8 +36,9 @@ export async function GET() {
 
       const providers: string[] = [];
       if (oidcEnabled) providers.push('oidc');
-      // Only add 'local' provider if not disabled and users exist
-      if (hasLocalUsers && !localLoginDisabled) providers.push('local');
+      // Add 'local' provider if not disabled and (users exist OR registration is enabled)
+      // Registration needs local auth form to be shown even when no users exist yet
+      if ((hasLocalUsers || registrationEnabled) && !localLoginDisabled) providers.push('local');
 
       return NextResponse.json({
         backendMode: 'audiobookshelf',

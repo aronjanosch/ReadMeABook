@@ -10,12 +10,14 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const swipeHandlers: {
+  onSwipeStart?: () => void;
   onSwiping?: (eventData: { deltaX: number; deltaY: number }) => void;
   onSwiped?: (eventData: { deltaX: number; deltaY: number }) => void;
 } = {};
 
 vi.mock('react-swipeable', () => ({
   useSwipeable: (handlers: any) => {
+    swipeHandlers.onSwipeStart = handlers.onSwipeStart;
     swipeHandlers.onSwiping = handlers.onSwiping;
     swipeHandlers.onSwiped = handlers.onSwiped;
     return {};
@@ -33,6 +35,7 @@ const recommendation = {
 
 describe('RecommendationCard', () => {
   beforeEach(() => {
+    swipeHandlers.onSwipeStart = undefined;
     swipeHandlers.onSwiping = undefined;
     swipeHandlers.onSwiped = undefined;
   });
@@ -87,6 +90,7 @@ describe('RecommendationCard', () => {
     render(<RecommendationCard recommendation={recommendation} onSwipe={onSwipe} />);
 
     act(() => {
+      swipeHandlers.onSwipeStart?.();
       swipeHandlers.onSwiping?.({ deltaX: -80, deltaY: 0 });
     });
 

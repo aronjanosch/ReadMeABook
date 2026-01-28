@@ -193,7 +193,7 @@ describe('PlexAuthProvider', () => {
 
     const { PlexAuthProvider } = await import('@/lib/services/auth/PlexAuthProvider');
     const provider = new PlexAuthProvider();
-    const ok = await provider.validateAccess({ id: 'user-1', username: 'user', isAdmin: false, authProvider: 'plex' });
+    const ok = await provider.validateAccess({ id: 'user-1', username: 'user', role: 'user', authProvider: 'plex' });
 
     expect(ok).toBe(false);
   });
@@ -207,7 +207,7 @@ describe('PlexAuthProvider', () => {
 
     const { PlexAuthProvider } = await import('@/lib/services/auth/PlexAuthProvider');
     const provider = new PlexAuthProvider();
-    const ok = await provider.validateAccess({ id: 'user-1', username: 'user', isAdmin: false, authProvider: 'plex' });
+    const ok = await provider.validateAccess({ id: 'user-1', username: 'user', role: 'user', authProvider: 'plex' });
 
     expect(ok).toBe(false);
   });
@@ -222,7 +222,7 @@ describe('PlexAuthProvider', () => {
 
     const { PlexAuthProvider } = await import('@/lib/services/auth/PlexAuthProvider');
     const provider = new PlexAuthProvider();
-    const ok = await provider.validateAccess({ id: 'user-1', username: 'user', isAdmin: false, authProvider: 'plex' });
+    const ok = await provider.validateAccess({ id: 'user-1', username: 'user', role: 'user', authProvider: 'plex' });
 
     expect(ok).toBe(true);
     expect(encryptionMock.decrypt).toHaveBeenCalledWith('enc:token');

@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
         plexId: result.user.id, // Use id as plexId for consistency
         username: result.user.username,
         email: result.user.email,
-        role: result.user.isAdmin ? 'admin' : 'user',
+        role: result.user.role || 'user',
         avatarUrl: result.user.avatarUrl,
       },
     };

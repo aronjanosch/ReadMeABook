@@ -40,7 +40,7 @@ describe('processSearchIndexers', () => {
   it('marks request awaiting_search when no results found', async () => {
     configMock.get.mockImplementation(async (key: string) => {
       if (key === 'prowlarr_indexers') {
-        return JSON.stringify([{ id: 1, name: 'Indexer', priority: 10, categories: [3030] }]);
+        return JSON.stringify([{ id: 1, name: 'Indexer', protocol: 'torrent', priority: 10, categories: [3030] }]);
       }
       return null;
     });
@@ -65,7 +65,7 @@ describe('processSearchIndexers', () => {
   it('queues download job when results are ranked', async () => {
     configMock.get.mockImplementation(async (key: string) => {
       if (key === 'prowlarr_indexers') {
-        return JSON.stringify([{ id: 1, name: 'Indexer', priority: 10, categories: [3030] }]);
+        return JSON.stringify([{ id: 1, name: 'Indexer', protocol: 'torrent', priority: 10, categories: [3030] }]);
       }
       if (key === 'indexer_flag_config') {
         return JSON.stringify([]);

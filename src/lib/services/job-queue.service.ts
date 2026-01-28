@@ -17,7 +17,6 @@ export type JobType =
   | 'monitor_download'
   | 'organize_files'
   | 'scan_plex'
-  | 'match_plex'
   | 'plex_library_scan'
   | 'plex_recently_added_check'
   | 'audible_refresh'
@@ -70,13 +69,6 @@ export interface ScanPlexPayload extends JobPayload {
   libraryId?: string;
   partial?: boolean;
   path?: string;
-}
-
-export interface MatchPlexPayload extends JobPayload {
-  requestId: string;
-  audiobookId: string;
-  title: string;
-  author: string;
 }
 
 export interface PlexRecentlyAddedPayload extends JobPayload {
@@ -258,12 +250,6 @@ export class JobQueueService {
     this.queue.process('scan_plex', 1, async (job: BullJob<ScanPlexPayload>) => {
       const { processScanPlex } = await import('../processors/scan-plex.processor');
       return await processScanPlex(job.data);
-    });
-
-    // Match Plex processor
-    this.queue.process('match_plex', 3, async (job: BullJob<MatchPlexPayload>) => {
-      const { processMatchPlex } = await import('../processors/match-plex.processor');
-      return await processMatchPlex(job.data);
     });
 
     // Scheduled job processors
@@ -555,29 +541,6 @@ export class JobQueueService {
       } as ScanPlexPayload,
       {
         priority: 7,
-      }
-    );
-  }
-
-  /**
-   * Add Plex match job
-   */
-  async addPlexMatchJob(
-    requestId: string,
-    audiobookId: string,
-    title: string,
-    author: string
-  ): Promise<string> {
-    return await this.addJob(
-      'match_plex',
-      {
-        requestId,
-        audiobookId,
-        title,
-        author,
-      } as MatchPlexPayload,
-      {
-        priority: 6,
       }
     );
   }

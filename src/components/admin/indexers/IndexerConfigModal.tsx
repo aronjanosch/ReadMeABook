@@ -24,15 +24,18 @@ interface IndexerConfigModalProps {
   };
   initialConfig?: {
     priority: number;
-    seedingTimeMinutes: number;
+    seedingTimeMinutes?: number;
+    removeAfterProcessing?: boolean;
     rssEnabled: boolean;
     categories: number[];
   };
   onSave: (config: {
     id: number;
     name: string;
+    protocol: string;
     priority: number;
-    seedingTimeMinutes: number;
+    seedingTimeMinutes?: number;
+    removeAfterProcessing?: boolean;
     rssEnabled: boolean;
     categories: number[];
   }) => void;
@@ -47,9 +50,11 @@ export function IndexerConfigModal({
   onSave,
 }: IndexerConfigModalProps) {
   // Default values for Add mode
+  const isTorrent = indexer.protocol?.toLowerCase() === 'torrent';
   const defaults = {
     priority: 10,
     seedingTimeMinutes: 0,
+    removeAfterProcessing: true, // Default to true for Usenet
     rssEnabled: indexer.supportsRss,
     categories: DEFAULT_CATEGORIES, // Default to Audio/Audiobook [3030]
   };
@@ -60,6 +65,9 @@ export function IndexerConfigModal({
   );
   const [seedingTimeMinutes, setSeedingTimeMinutes] = useState(
     initialConfig?.seedingTimeMinutes ?? defaults.seedingTimeMinutes
+  );
+  const [removeAfterProcessing, setRemoveAfterProcessing] = useState(
+    initialConfig?.removeAfterProcessing ?? defaults.removeAfterProcessing
   );
   const [rssEnabled, setRssEnabled] = useState(
     initialConfig?.rssEnabled ?? defaults.rssEnabled
@@ -81,11 +89,13 @@ export function IndexerConfigModal({
       if (mode === 'add') {
         setPriority(defaults.priority);
         setSeedingTimeMinutes(defaults.seedingTimeMinutes);
+        setRemoveAfterProcessing(defaults.removeAfterProcessing);
         setRssEnabled(defaults.rssEnabled);
         setSelectedCategories(defaults.categories);
       } else {
         setPriority(initialConfig?.priority ?? defaults.priority);
         setSeedingTimeMinutes(initialConfig?.seedingTimeMinutes ?? defaults.seedingTimeMinutes);
+        setRemoveAfterProcessing(initialConfig?.removeAfterProcessing ?? defaults.removeAfterProcessing);
         setRssEnabled(initialConfig?.rssEnabled ?? defaults.rssEnabled);
         setSelectedCategories(initialConfig?.categories ?? defaults.categories);
       }
@@ -100,7 +110,7 @@ export function IndexerConfigModal({
       newErrors.priority = 'Priority must be between 1 and 25';
     }
 
-    if (seedingTimeMinutes < 0) {
+    if (isTorrent && seedingTimeMinutes < 0) {
       newErrors.seedingTimeMinutes = 'Seeding time cannot be negative';
     }
 
@@ -117,15 +127,23 @@ export function IndexerConfigModal({
       return;
     }
 
-    onSave({
+    const config: any = {
       id: indexer.id,
       name: indexer.name,
+      protocol: indexer.protocol,
       priority,
-      seedingTimeMinutes,
       rssEnabled: indexer.supportsRss ? rssEnabled : false,
       categories: selectedCategories,
-    });
+    };
 
+    // Add protocol-specific fields
+    if (isTorrent) {
+      config.seedingTimeMinutes = seedingTimeMinutes;
+    } else {
+      config.removeAfterProcessing = removeAfterProcessing;
+    }
+
+    onSave(config);
     onClose();
   };
 
@@ -196,29 +214,54 @@ export function IndexerConfigModal({
           )}
         </div>
 
-        {/* Seeding Time */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Seeding Time (minutes)
-          </label>
-          <Input
-            type="number"
-            min="0"
-            step="1"
-            value={seedingTimeMinutes}
-            onChange={(e) => handleSeedingTimeChange(e.target.value)}
-            placeholder="0"
-            className={errors.seedingTimeMinutes ? 'border-red-500' : ''}
-          />
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            0 = unlimited seeding (files remain seeded indefinitely)
-          </p>
-          {errors.seedingTimeMinutes && (
-            <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-              {errors.seedingTimeMinutes}
+        {/* Seeding Time (Torrents only) */}
+        {isTorrent && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Seeding Time (minutes)
+            </label>
+            <Input
+              type="number"
+              min="0"
+              step="1"
+              value={seedingTimeMinutes}
+              onChange={(e) => handleSeedingTimeChange(e.target.value)}
+              placeholder="0"
+              className={errors.seedingTimeMinutes ? 'border-red-500' : ''}
+            />
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              0 = unlimited seeding (files remain seeded indefinitely)
             </p>
-          )}
-        </div>
+            {errors.seedingTimeMinutes && (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                {errors.seedingTimeMinutes}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Remove After Processing (Usenet only) */}
+        {!isTorrent && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Post-Processing Cleanup
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={removeAfterProcessing}
+                onChange={(e) => setRemoveAfterProcessing(e.target.checked)}
+                className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                Remove download from SABnzbd after files are organized
+              </span>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+              Recommended: Automatically deletes completed NZB downloads to save disk space
+            </p>
+          </div>
+        )}
 
         {/* RSS Monitoring */}
         <div>

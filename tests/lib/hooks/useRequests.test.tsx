@@ -6,7 +6,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { act, render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useAuthMock = vi.hoisted(() => vi.fn());
@@ -37,6 +37,16 @@ const renderHookValue = <T,>(hook: () => T) => {
   return value!;
 };
 
+const renderHook = <T,>(hook: () => T) => {
+  const result = { current: undefined as T };
+  function Probe() {
+    result.current = hook();
+    return null;
+  }
+  render(<Probe />);
+  return result;
+};
+
 const makeResponse = (body: any, ok = true) => ({
   ok,
   json: async () => body,
@@ -61,6 +71,21 @@ describe('useRequests hooks', () => {
 
     expect(useSWRMock).toHaveBeenCalledWith(
       '/api/requests?status=pending&limit=25&myOnly=true',
+      expect.any(Function),
+      expect.objectContaining({ refreshInterval: 5000 })
+    );
+  });
+
+  it('skips request list endpoints when unauthenticated', async () => {
+    useAuthMock.mockReturnValue({ accessToken: null });
+    useSWRMock.mockReturnValue({ data: null, error: null, isLoading: false });
+
+    const { useRequests } = await import('@/lib/hooks/useRequests');
+
+    renderHookValue(() => useRequests());
+
+    expect(useSWRMock).toHaveBeenCalledWith(
+      null,
       expect.any(Function),
       expect.objectContaining({ refreshInterval: 5000 })
     );
@@ -100,6 +125,37 @@ describe('useRequests hooks', () => {
     expect(mutateMock).toHaveBeenCalled();
   });
 
+  it('adds skipAutoSearch query params when creating requests', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ request: { id: 'req-10' } }));
+
+    const { useCreateRequest } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useCreateRequest());
+
+    await act(async () => {
+      await result.current.createRequest(
+        { asin: 'a10', title: 'Book', author: 'Author' } as any,
+        { skipAutoSearch: true }
+      );
+    });
+
+    expect(fetchWithAuthMock).toHaveBeenCalledWith(
+      '/api/requests?skipAutoSearch=true',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('throws when creating a request without authentication', async () => {
+    useAuthMock.mockReturnValue({ accessToken: null });
+
+    const { useCreateRequest } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useCreateRequest());
+
+    await expect(
+      result.current.createRequest({ asin: 'a1', title: 'Book', author: 'Author' } as any)
+    ).rejects.toThrow('Not authenticated');
+  });
+
   it('surfaces specific create request errors', async () => {
     useAuthMock.mockReturnValue({ accessToken: 'token' });
     fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ error: 'AlreadyAvailable' }, false));
@@ -111,6 +167,42 @@ describe('useRequests hooks', () => {
       await expect(
         hook.createRequest({ asin: 'a1', title: 'Book', author: 'Author' } as any)
       ).rejects.toThrow('already in your Plex library');
+    });
+  });
+
+  it('surfaces being processed errors when creating requests', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ error: 'BeingProcessed' }, false));
+
+    const { useCreateRequest } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useCreateRequest());
+
+    await act(async () => {
+      await expect(
+        result.current.createRequest({ asin: 'a2', title: 'Book', author: 'Author' } as any)
+      ).rejects.toThrow('being processed');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain('being processed');
+    });
+  });
+
+  it('surfaces API error messages when creating requests', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ message: 'Backend refused' }, false));
+
+    const { useCreateRequest } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useCreateRequest());
+
+    await act(async () => {
+      await expect(
+        result.current.createRequest({ asin: 'a3', title: 'Book', author: 'Author' } as any)
+      ).rejects.toThrow('Backend refused');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Backend refused');
     });
   });
 
@@ -148,6 +240,22 @@ describe('useRequests hooks', () => {
     );
   });
 
+  it('captures API errors when triggering manual search', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ message: 'Manual search failed' }, false));
+
+    const { useManualSearch } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useManualSearch());
+
+    await act(async () => {
+      await expect(result.current.triggerManualSearch('req-3')).rejects.toThrow('Manual search failed');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Manual search failed');
+    });
+  });
+
   it('searches torrents interactively for a request', async () => {
     useAuthMock.mockReturnValue({ accessToken: 'token' });
     fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ results: [{ guid: 't1' }] }));
@@ -164,6 +272,22 @@ describe('useRequests hooks', () => {
       '/api/requests/req-4/interactive-search',
       expect.objectContaining({ method: 'POST' })
     );
+  });
+
+  it('reports interactive search errors', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ message: 'Search failed' }, false));
+
+    const { useInteractiveSearch } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useInteractiveSearch());
+
+    await act(async () => {
+      await expect(result.current.searchTorrents('req-4')).rejects.toThrow('Search failed');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('Search failed');
+    });
   });
 
   it('selects torrents for existing requests', async () => {
@@ -216,5 +340,47 @@ describe('useRequests hooks', () => {
       '/api/audiobooks/request-with-torrent',
       expect.objectContaining({ method: 'POST' })
     );
+  });
+
+  it('surfaces being processed errors when requesting with torrents', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ error: 'BeingProcessed' }, false));
+
+    const { useRequestWithTorrent } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useRequestWithTorrent());
+
+    await act(async () => {
+      await expect(
+        result.current.requestWithTorrent(
+          { asin: 'a4', title: 'Book', author: 'Author' } as any,
+          { title: 'Torrent' }
+        )
+      ).rejects.toThrow('being processed');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain('being processed');
+    });
+  });
+
+  it('surfaces already available errors when requesting with torrents', async () => {
+    useAuthMock.mockReturnValue({ accessToken: 'token' });
+    fetchWithAuthMock.mockResolvedValueOnce(makeResponse({ error: 'AlreadyAvailable' }, false));
+
+    const { useRequestWithTorrent } = await import('@/lib/hooks/useRequests');
+    const result = renderHook(() => useRequestWithTorrent());
+
+    await act(async () => {
+      await expect(
+        result.current.requestWithTorrent(
+          { asin: 'a5', title: 'Book', author: 'Author' } as any,
+          { title: 'Torrent' }
+        )
+      ).rejects.toThrow('already in your Plex library');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toContain('already in your Plex library');
+    });
   });
 });

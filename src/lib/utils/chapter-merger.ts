@@ -10,7 +10,7 @@ import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
-import { JobLogger } from './job-logger';
+import { RMABLogger } from './logger';
 
 const execPromise = promisify(exec);
 
@@ -79,7 +79,7 @@ export interface MergeResult {
  * This is more permissive and catches edge cases where filenames don't match patterns
  * but metadata (track numbers) provides correct ordering.
  */
-export async function detectChapterFiles(files: string[], logger?: JobLogger): Promise<boolean> {
+export async function detectChapterFiles(files: string[], logger?: RMABLogger): Promise<boolean> {
   // Need at least 3 files to consider as multi-chapter audiobook
   // (2 files might be "Book" + "Credits", so require 3+)
   if (files.length < 3) {
@@ -285,7 +285,7 @@ function detectBookTitle(files: { titleMetadata?: string }[]): string | null {
  */
 export async function analyzeChapterFiles(
   filePaths: string[],
-  logger?: JobLogger
+  logger?: RMABLogger
 ): Promise<ChapterFile[]> {
   await logger?.info(`Analyzing ${filePaths.length} chapter files...`);
 
@@ -484,7 +484,7 @@ async function executeFFmpegWithProgress(
   command: string,
   timeout: number,
   expectedDuration: number, // milliseconds
-  logger?: JobLogger
+  logger?: RMABLogger
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     // Parse the command to extract args (remove 'ffmpeg' and handle quotes)
@@ -532,7 +532,7 @@ async function executeFFmpegWithProgress(
           const speed = speedMatch ? parseFloat(speedMatch[1]) : null;
 
           const speedInfo = speed ? ` (${speed.toFixed(1)}x realtime)` : '';
-          logger?.info(`Encoding progress: ${progressPercent}%${speedInfo} - ${formatDuration(currentTimeMs)} / ${formatDuration(expectedDuration)}`).catch(() => {});
+          logger?.info(`Encoding progress: ${progressPercent}%${speedInfo} - ${formatDuration(currentTimeMs)} / ${formatDuration(expectedDuration)}`);
 
           lastProgressLog = Date.now();
           lastProgressPercent = progressPercent;
@@ -546,7 +546,7 @@ async function executeFFmpegWithProgress(
       if (code === 0) {
         // Check stderr for errors even if exit code is 0
         if (stderrBuffer.includes('Error') || stderrBuffer.includes('Invalid')) {
-          logger?.warn(`FFmpeg completed but reported issues: ${stderrBuffer.substring(stderrBuffer.lastIndexOf('Error'), stderrBuffer.lastIndexOf('Error') + 200)}`).catch(() => {});
+          logger?.warn(`FFmpeg completed but reported issues: ${stderrBuffer.substring(stderrBuffer.lastIndexOf('Error'), stderrBuffer.lastIndexOf('Error') + 200)}`);
         }
         resolve();
       } else {
@@ -574,7 +574,7 @@ async function executeFFmpegWithProgress(
 export async function mergeChapters(
   chapters: ChapterFile[],
   options: MergeOptions,
-  logger?: JobLogger
+  logger?: RMABLogger
 ): Promise<MergeResult> {
   if (chapters.length === 0) {
     await logger?.error('Chapter merge failed: No chapters provided');
@@ -806,7 +806,7 @@ export async function mergeChapters(
 async function validateMergedFile(
   outputPath: string,
   expectedDuration: number, // milliseconds
-  logger?: JobLogger
+  logger?: RMABLogger
 ): Promise<{ valid: boolean; error?: string; actualDuration?: number }> {
   try {
     await logger?.info('Validating merged file...');

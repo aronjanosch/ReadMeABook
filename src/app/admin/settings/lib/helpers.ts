@@ -69,22 +69,20 @@ export const saveTabSettings = async (
       break;
 
     case 'auth':
-      // Save OIDC settings if enabled
-      if (settings.oidc.enabled) {
-        const oidcPayload = {
-          ...settings.oidc,
-          allowedEmails: parseCommaSeparatedToArray(settings.oidc.allowedEmails),
-          allowedUsernames: parseCommaSeparatedToArray(settings.oidc.allowedUsernames),
-        };
+      // Always save OIDC settings (including enabled/disabled state)
+      const oidcPayload = {
+        ...settings.oidc,
+        allowedEmails: parseCommaSeparatedToArray(settings.oidc.allowedEmails),
+        allowedUsernames: parseCommaSeparatedToArray(settings.oidc.allowedUsernames),
+      };
 
-        await fetchWithAuth('/api/admin/settings/oidc', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(oidcPayload),
-        }).then(res => {
-          if (!res.ok) throw new Error('Failed to save OIDC settings');
-        });
-      }
+      await fetchWithAuth('/api/admin/settings/oidc', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(oidcPayload),
+      }).then(res => {
+        if (!res.ok) throw new Error('Failed to save OIDC settings');
+      });
 
       // Save registration settings
       await fetchWithAuth('/api/admin/settings/registration', {
@@ -147,10 +145,20 @@ export const saveTabSettings = async (
  */
 export const validateAuthSettings = (settings: Settings): { valid: boolean; message?: string } => {
   if (settings.backendMode === 'audiobookshelf') {
+    // Case 1: No auth methods enabled and no local users - complete lockout
     if (!settings.oidc.enabled && !settings.registration.enabled && !settings.hasLocalUsers) {
       return {
         valid: false,
         message: 'At least one authentication method must be enabled (OIDC or Manual Registration) since no local users exist. Otherwise, you will be locked out of the system.',
+      };
+    }
+
+    // Case 2: Only manual registration enabled, but no local admin users
+    // This would allow new registrations, but no one can access admin features or approve registrations
+    if (!settings.oidc.enabled && settings.registration.enabled && !settings.hasLocalAdmins) {
+      return {
+        valid: false,
+        message: 'Manual registration is enabled but no local admin users exist. New users will be able to register but you will be locked out of admin features. Please enable OIDC or ensure at least one local admin user exists.',
       };
     }
   }
@@ -178,7 +186,14 @@ export const getTabValidation = (
     case 'library':
       return settings.backendMode === 'plex' ? validated.plex : validated.audiobookshelf;
     case 'auth':
-      return validated.oidc || validated.registration;
+      // If OIDC is enabled, it must be validated
+      // If OIDC is disabled, we don't require validation for it
+      // Registration doesn't require explicit validation (just a toggle)
+      if (settings.oidc.enabled) {
+        return validated.oidc;
+      }
+      // If OIDC is disabled, allow saving without validation
+      return true;
     case 'prowlarr':
       // Only require validation if URL or API key changed
       // If only indexers/flags changed, allow saving without test

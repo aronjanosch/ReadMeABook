@@ -9,6 +9,7 @@ import { getFileOrganizer } from '../utils/file-organizer';
 import { RMABLogger } from '../utils/logger';
 import { getLibraryService } from '../services/library';
 import { getConfigService } from '../services/config.service';
+import { generateFilesHash } from '../utils/files-hash';
 
 /**
  * Process organize files job
@@ -107,11 +108,18 @@ export async function processOrganizeFiles(payload: OrganizeFilesPayload): Promi
 
     logger.info(`Successfully moved ${result.filesMovedCount} files to ${result.targetPath}`);
 
-    // Update audiobook record with file path and status
+    // Generate hash from organized audio files for library matching
+    const filesHash = generateFilesHash(result.audioFiles);
+    if (filesHash) {
+      logger.info(`Generated files hash: ${filesHash.substring(0, 16)}... (${result.audioFiles.length} audio files)`);
+    }
+
+    // Update audiobook record with file path, hash, and status
     await prisma.audiobook.update({
       where: { id: audiobookId },
       data: {
         filePath: result.targetPath,
+        filesHash: filesHash || null,
         status: 'completed',
         completedAt: new Date(),
         updatedAt: new Date(),
@@ -186,6 +194,95 @@ export async function processOrganizeFiles(payload: OrganizeFilesPayload): Promi
     } else {
       logger.info(
         `${backendMode} filesystem scan trigger disabled (relying on filesystem watcher)`
+      );
+    }
+
+    // Cleanup Usenet downloads if configured
+    try {
+      logger.info('Checking if cleanup is needed for this download');
+
+      // Get download history to find NZB ID and indexer
+      const downloadHistory = await prisma.downloadHistory.findFirst({
+        where: { requestId },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      logger.info(`Download history found: ${downloadHistory ? 'yes' : 'no'}`, {
+        hasNzbId: !!downloadHistory?.nzbId,
+        hasIndexerId: !!downloadHistory?.indexerId,
+        nzbId: downloadHistory?.nzbId || 'none',
+        indexerId: downloadHistory?.indexerId || 'none',
+      });
+
+      if (downloadHistory?.nzbId && downloadHistory?.indexerId) {
+        // Get indexer configuration
+        const indexersConfig = await configService.get('prowlarr_indexers');
+        logger.info(`Indexers config found: ${indexersConfig ? 'yes' : 'no'}`);
+
+        if (indexersConfig) {
+          const indexers: Array<{ id: number; protocol: string; removeAfterProcessing?: boolean }> = JSON.parse(indexersConfig);
+          const indexer = indexers.find(idx => idx.id === downloadHistory.indexerId);
+
+          logger.info(`Indexer found in config: ${indexer ? 'yes' : 'no'}`, {
+            indexerId: downloadHistory.indexerId,
+            protocol: indexer?.protocol || 'none',
+            removeAfterProcessing: indexer?.removeAfterProcessing ?? 'undefined',
+          });
+
+          // Check if this is a Usenet indexer with cleanup enabled
+          if (indexer && indexer.protocol?.toLowerCase() !== 'torrent' && indexer.removeAfterProcessing) {
+            logger.info(`Cleaning up NZB ${downloadHistory.nzbId} (cleanup enabled for indexer ${indexer.id})`);
+
+            // First, manually delete files from filesystem
+            if (downloadPath) {
+              logger.info(`Removing download files from filesystem: ${downloadPath}`);
+
+              const fs = await import('fs/promises');
+
+              try {
+                // Check if it's a file or directory
+                const stats = await fs.stat(downloadPath);
+
+                if (stats.isDirectory()) {
+                  // Remove directory and all contents
+                  await fs.rm(downloadPath, { recursive: true, force: true });
+                  logger.info(`Removed directory: ${downloadPath}`);
+                } else {
+                  // Remove single file
+                  await fs.unlink(downloadPath);
+                  logger.info(`Removed file: ${downloadPath}`);
+                }
+              } catch (fsError) {
+                // File/directory might already be deleted or not exist
+                if ((fsError as NodeJS.ErrnoException).code === 'ENOENT') {
+                  logger.info(`Download path already deleted: ${downloadPath}`);
+                } else {
+                  throw fsError;
+                }
+              }
+            } else {
+              logger.warn(`No download path available, skipping filesystem deletion`);
+            }
+
+            // Then archive from SABnzbd history (hides from UI but preserves for troubleshooting)
+            // Note: We only archive from history, not queue. If the NZB is still in the queue
+            // when we're organizing files, something went wrong with the download monitoring.
+            const { getSABnzbdService } = await import('../integrations/sabnzbd.service');
+            const sabnzbd = await getSABnzbdService();
+
+            await sabnzbd.archiveCompletedNZB(downloadHistory.nzbId);
+
+            logger.info(`Successfully archived NZB ${downloadHistory.nzbId} and removed files`);
+          }
+        }
+      }
+    } catch (error) {
+      // Log error but don't fail the job - cleanup is optional
+      logger.warn(
+        `Failed to cleanup NZB download: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        {
+          error: error instanceof Error ? error.stack : undefined,
+        }
       );
     }
 

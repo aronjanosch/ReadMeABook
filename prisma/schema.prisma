@@ -186,6 +186,9 @@ model Audiobook {
   // Audiobookshelf integration (alternative to Plex)
   absItemId String? @map("abs_item_id") // Audiobookshelf item ID
 
+  // File hash for accurate library matching (SHA256 of sorted audio filenames)
+  filesHash String? @map("files_hash") @db.Text
+
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   completedAt DateTime? @map("completed_at")
@@ -199,6 +202,7 @@ model Audiobook {
   @@index([title])
   @@index([author])
   @@index([status])
+  @@index([filesHash])
   @@map("audiobooks")
 }
 
@@ -245,6 +249,7 @@ model DownloadHistory {
   id               String    @id @default(uuid())
   requestId        String    @map("request_id")
   indexerName      String    @map("indexer_name")
+  indexerId        Int?      @map("indexer_id") // Prowlarr indexer ID for configuration lookup
   torrentName      String?   @map("torrent_name")
   torrentHash      String?   @map("torrent_hash")
   nzbId            String?   @map("nzb_id") // SABnzbd NZB ID (mutually exclusive with torrentHash)
@@ -269,6 +274,7 @@ model DownloadHistory {
 
   @@index([requestId])
   @@index([selected])
+  @@index([indexerId])
   @@index([torrentHash])
   @@index([nzbId])
   @@index([createdAt(sort: Desc)])
@@ -368,8 +374,6 @@ model BookDateConfig {
   apiKey       String   @map("api_key") @db.Text // Encrypted at rest (AES-256)
   model        String // e.g., 'gpt-4o', 'claude-sonnet-4-5-20250929'
   baseUrl      String?  @map("base_url") @db.Text // Base URL for custom provider (OpenAI-compatible endpoints)
-  libraryScope String?  @map("library_scope") // DEPRECATED: Now per-user (User.bookDateLibraryScope)
-  customPrompt String?  @map("custom_prompt") @db.Text // DEPRECATED: Now per-user (User.bookDateCustomPrompt)
   isVerified   Boolean  @default(false) @map("is_verified")
   isEnabled    Boolean  @default(true) @map("is_enabled") // Admin toggle (global feature)
   createdAt    DateTime @default(now()) @map("created_at")

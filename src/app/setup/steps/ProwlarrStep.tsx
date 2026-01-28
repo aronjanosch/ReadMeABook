@@ -21,8 +21,10 @@ interface ProwlarrStepProps {
 interface SelectedIndexer {
   id: number;
   name: string;
+  protocol: string;
   priority: number;
-  seedingTimeMinutes: number;
+  seedingTimeMinutes?: number; // Torrents only
+  removeAfterProcessing?: boolean; // Usenet only
   rssEnabled: boolean;
   categories: number[];
 }

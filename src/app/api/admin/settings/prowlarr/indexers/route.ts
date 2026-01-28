@@ -14,8 +14,10 @@ const logger = RMABLogger.create('API.Admin.Settings.ProwlarrIndexers');
 interface SavedIndexerConfig {
   id: number;
   name: string;
+  protocol: string;
   priority: number;
-  seedingTimeMinutes: number;
+  seedingTimeMinutes?: number; // Torrents only
+  removeAfterProcessing?: boolean; // Usenet only
   rssEnabled?: boolean;
   categories?: number[]; // Array of category IDs (default: [3030] for audiobooks)
 }
@@ -50,8 +52,9 @@ export async function GET(request: NextRequest) {
         const indexersWithConfig = indexers.map((indexer: any) => {
           const saved = savedIndexersMap.get(indexer.id);
           const isAdded = !!saved;
+          const isTorrent = indexer.protocol?.toLowerCase() === 'torrent';
 
-          return {
+          const config: any = {
             id: indexer.id,
             name: indexer.name,
             protocol: indexer.protocol,
@@ -59,11 +62,19 @@ export async function GET(request: NextRequest) {
             enabled: isAdded, // Enabled if in saved list
             isAdded, // Explicit flag for UI (new card-based interface)
             priority: saved?.priority || 10,
-            seedingTimeMinutes: saved?.seedingTimeMinutes ?? 0,
             rssEnabled: saved?.rssEnabled ?? false,
             categories: saved?.categories || [3030], // Default to audiobooks category
             supportsRss: indexer.capabilities?.supportsRss !== false, // Default to true if not specified
           };
+
+          // Add protocol-specific fields
+          if (isTorrent) {
+            config.seedingTimeMinutes = saved?.seedingTimeMinutes ?? 0;
+          } else {
+            config.removeAfterProcessing = saved?.removeAfterProcessing ?? true;
+          }
+
+          return config;
         });
 
         return NextResponse.json({
@@ -99,14 +110,26 @@ export async function PUT(request: NextRequest) {
         // Filter to only enabled indexers and convert to wizard format
         const enabledIndexers = indexers
           .filter((indexer: any) => indexer.enabled)
-          .map((indexer: any) => ({
-            id: indexer.id,
-            name: indexer.name,
-            priority: indexer.priority,
-            seedingTimeMinutes: indexer.seedingTimeMinutes,
-            rssEnabled: indexer.rssEnabled || false,
-            categories: indexer.categories || [3030], // Default to audiobooks if not specified
-          }));
+          .map((indexer: any) => {
+            const config: any = {
+              id: indexer.id,
+              name: indexer.name,
+              protocol: indexer.protocol,
+              priority: indexer.priority,
+              rssEnabled: indexer.rssEnabled || false,
+              categories: indexer.categories || [3030], // Default to audiobooks if not specified
+            };
+
+            // Add protocol-specific fields
+            const isTorrent = indexer.protocol?.toLowerCase() === 'torrent';
+            if (isTorrent) {
+              config.seedingTimeMinutes = indexer.seedingTimeMinutes ?? 0;
+            } else {
+              config.removeAfterProcessing = indexer.removeAfterProcessing ?? true;
+            }
+
+            return config;
+          });
 
         // Save to configuration (matches wizard format)
         const configService = getConfigService();

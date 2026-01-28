@@ -11,6 +11,7 @@ import { Header } from '@/components/layout/Header';
 import { CardStack } from '@/components/bookdate/CardStack';
 import { LoadingScreen } from '@/components/bookdate/LoadingScreen';
 import { SettingsWidget } from '@/components/bookdate/SettingsWidget';
+import { AudiobookDetailsModal } from '@/components/audiobooks/AudiobookDetailsModal';
 
 export default function BookDatePage() {
   const [recommendations, setRecommendations] = useState<any[]>([]);
@@ -22,6 +23,7 @@ export default function BookDatePage() {
   const [showSettings, setShowSettings] = useState(false);
   const [isOnboarding, setIsOnboarding] = useState(false);
   const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -230,6 +232,21 @@ export default function BookDatePage() {
     }
   };
 
+  const handleShowDetails = () => {
+    console.log('Opening details modal for:', recommendations[currentIndex]);
+    const currentRec = recommendations[currentIndex];
+    const asin = currentRec?.asin || currentRec?.audnexusAsin;
+    if (asin) {
+      setShowDetailsModal(true);
+    } else {
+      console.error('No ASIN available for current recommendation');
+    }
+  };
+
+  const handleCloseDetails = () => {
+    setShowDetailsModal(false);
+  };
+
   // Loading state (checking onboarding or loading recommendations)
   if (loading || checkingOnboarding) {
     return <LoadingScreen />;
@@ -333,10 +350,10 @@ export default function BookDatePage() {
       <Header />
 
       <main className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] p-2 md:p-4">
-        {/* Settings button */}
+        {/* Settings button - positioned to avoid card overlap */}
         <button
           onClick={() => setShowSettings(true)}
-          className="fixed top-20 right-4 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg transition-all z-10"
+          className="fixed bottom-4 right-4 md:top-20 md:bottom-auto p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-full md:rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 shadow-lg transition-all z-10"
           aria-label="Open settings"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -356,6 +373,7 @@ export default function BookDatePage() {
           currentIndex={currentIndex}
           onSwipe={handleSwipe}
           onSwipeComplete={handleSwipeComplete}
+          onShowDetails={handleShowDetails}
         />
 
         {/* Undo button */}
@@ -381,6 +399,24 @@ export default function BookDatePage() {
         isOnboarding={isOnboarding}
         onOnboardingComplete={handleOnboardingComplete}
       />
+
+      {/* Audiobook Details Modal */}
+      {showDetailsModal && recommendations[currentIndex] && (() => {
+        const currentRec = recommendations[currentIndex];
+        const asin = currentRec.asin || currentRec.audnexusAsin;
+        return asin ? (
+          <AudiobookDetailsModal
+            asin={asin}
+            isOpen={showDetailsModal}
+            onClose={handleCloseDetails}
+            onRequestSuccess={loadRecommendations}
+            isRequested={currentRec.isRequested}
+            requestStatus={currentRec.requestStatus}
+            isAvailable={currentRec.isAvailable}
+            requestedByUsername={currentRec.requestedByUsername}
+          />
+        ) : null;
+      })()}
     </div>
   );
 }

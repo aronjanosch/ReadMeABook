@@ -159,6 +159,48 @@ describe('Auth misc routes', () => {
     expect(payload.registrationEnabled).toBe(true);
     expect(payload.oidcProviderName).toBe('MyOIDC');
   });
+
+  it('shows local provider when registration is enabled even without existing users', async () => {
+    configServiceMock.get
+      .mockResolvedValueOnce('audiobookshelf') // backend mode
+      .mockResolvedValueOnce(null) // indexer type
+      .mockResolvedValueOnce(null) // prowlarr url
+      .mockResolvedValueOnce('false') // oidc enabled
+      .mockResolvedValueOnce('true') // registration enabled
+      .mockResolvedValueOnce('SSO'); // oidc provider name
+
+    prismaMock.user.count.mockResolvedValueOnce(0); // No local users exist
+
+    const { GET } = await import('@/app/api/auth/providers/route');
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(payload.backendMode).toBe('audiobookshelf');
+    expect(payload.providers).toContain('local'); // Should include 'local' for registration
+    expect(payload.registrationEnabled).toBe(true);
+    expect(payload.hasLocalUsers).toBe(false);
+  });
+
+  it('does not show local provider when registration is disabled and no users exist', async () => {
+    configServiceMock.get
+      .mockResolvedValueOnce('audiobookshelf') // backend mode
+      .mockResolvedValueOnce(null) // indexer type
+      .mockResolvedValueOnce(null) // prowlarr url
+      .mockResolvedValueOnce('false') // oidc enabled
+      .mockResolvedValueOnce('false') // registration disabled
+      .mockResolvedValueOnce('SSO'); // oidc provider name
+
+    prismaMock.user.count.mockResolvedValueOnce(0); // No local users exist
+
+    const { GET } = await import('@/app/api/auth/providers/route');
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(payload.backendMode).toBe('audiobookshelf');
+    expect(payload.providers).not.toContain('local'); // Should NOT include 'local'
+    expect(payload.registrationEnabled).toBe(false);
+    expect(payload.hasLocalUsers).toBe(false);
+  });
 });
 
 

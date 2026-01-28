@@ -158,6 +158,47 @@ export class AudibleService {
   }
 
   /**
+   * External API fetch with retry logic and exponential backoff
+   * Used for Audnexus and other external APIs
+   */
+  private async externalFetchWithRetry(
+    url: string,
+    config: any = {},
+    maxRetries: number = 3
+  ): Promise<any> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await axios.get(url, config);
+      } catch (error: any) {
+        lastError = error;
+        const status = error.response?.status;
+        const isRetryable = !status || status === 503 || status === 429 || status >= 500;
+
+        // Don't retry on 404, 403, etc.
+        if (!isRetryable) {
+          throw error;
+        }
+
+        // Don't retry on last attempt
+        if (attempt === maxRetries) {
+          break;
+        }
+
+        // Exponential backoff: 2^attempt * 1000ms (1s, 2s, 4s...)
+        const backoffMs = Math.pow(2, attempt) * 1000;
+        logger.info(` External API request failed (${status || 'network error'}), retrying in ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})...`);
+
+        await this.delay(backoffMs);
+      }
+    }
+
+    // All retries exhausted
+    throw lastError || new Error('External API request failed after retries');
+  }
+
+  /**
    * Get popular audiobooks from best sellers (with pagination support)
    */
   async getPopularAudiobooks(limit: number = 20): Promise<AudibleAudiobook[]> {
@@ -349,7 +390,7 @@ export class AudibleService {
     try {
       logger.info(` Searching for "${query}"...`);
 
-      const response = await this.client.get('/search', {
+      const response = await this.fetchWithRetry('/search', {
         params: {
           keywords: query,
           page,
@@ -470,7 +511,7 @@ export class AudibleService {
       const audnexusRegion = AUDIBLE_REGIONS[this.region].audnexusParam;
       logger.debug(`Fetching ASIN from Audnexus: ${asin} (region: ${audnexusRegion})`);
 
-      const response = await axios.get(`https://api.audnex.us/books/${asin}`, {
+      const response = await this.externalFetchWithRetry(`https://api.audnex.us/books/${asin}`, {
         params: {
           region: audnexusRegion, // Pass region parameter to Audnexus
         },
@@ -531,7 +572,7 @@ export class AudibleService {
    */
   private async scrapeAudibleDetails(asin: string): Promise<AudibleAudiobook | null> {
     try {
-      const response = await this.client.get(`/pd/${asin}`);
+      const response = await this.fetchWithRetry(`/pd/${asin}`);
       const $ = cheerio.load(response.data);
 
       // Initialize result object
@@ -870,7 +911,7 @@ export class AudibleService {
       // Use Audnexus API for fast, reliable runtime data
       const audnexusRegion = AUDIBLE_REGIONS[this.region].audnexusParam;
 
-      const response = await axios.get(`https://api.audnex.us/books/${asin}`, {
+      const response = await this.externalFetchWithRetry(`https://api.audnex.us/books/${asin}`, {
         params: { region: audnexusRegion },
         timeout: 5000, // Quick timeout for search performance
         headers: { 'User-Agent': 'ReadMeABook/1.0' },

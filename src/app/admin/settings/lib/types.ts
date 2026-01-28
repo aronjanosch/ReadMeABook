@@ -9,6 +9,7 @@
 export interface Settings {
   backendMode: 'plex' | 'audiobookshelf';
   hasLocalUsers: boolean;
+  hasLocalAdmins: boolean;
   audibleRegion: string;
   plex: PlexSettings;
   audiobookshelf: AudiobookshelfSettings;
@@ -139,7 +140,8 @@ export interface IndexerConfig {
   privacy: string;
   enabled: boolean;
   priority: number;
-  seedingTimeMinutes: number;
+  seedingTimeMinutes?: number; // Torrents only
+  removeAfterProcessing?: boolean; // Usenet only
   rssEnabled: boolean;
   categories?: number[];
   supportsRss?: boolean;
@@ -151,8 +153,10 @@ export interface IndexerConfig {
 export interface SavedIndexerConfig {
   id: number;
   name: string;
+  protocol: string;
   priority: number;
-  seedingTimeMinutes: number;
+  seedingTimeMinutes?: number; // Torrents only
+  removeAfterProcessing?: boolean; // Usenet only
   rssEnabled: boolean;
   categories: number[];
 }

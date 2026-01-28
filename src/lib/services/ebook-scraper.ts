@@ -7,7 +7,6 @@ import axios, { AxiosError } from 'axios';
 import * as cheerio from 'cheerio';
 import fs from 'fs/promises';
 import path from 'path';
-import { JobLogger } from '../utils/job-logger';
 import { RMABLogger } from '../utils/logger';
 
 // Module-level logger (renamed to avoid shadowing function parameter 'logger')
@@ -90,7 +89,7 @@ async function fetchViaFlareSolverr(
 async function fetchHtml(
   url: string,
   flaresolverrUrl?: string,
-  logger?: JobLogger
+  logger?: RMABLogger
 ): Promise<string> {
   // Try FlareSolverr first if configured
   if (flaresolverrUrl) {
@@ -169,7 +168,7 @@ export async function downloadEbook(
   targetDir: string,
   preferredFormat: string = 'epub',
   baseUrl: string = 'https://annas-archive.li',
-  logger?: JobLogger,
+  logger?: RMABLogger,
   flaresolverrUrl?: string
 ): Promise<EbookDownloadResult> {
   try {
@@ -310,7 +309,7 @@ async function searchByAsin(
   asin: string,
   format: string,
   baseUrl: string,
-  logger?: JobLogger,
+  logger?: RMABLogger,
   flaresolverrUrl?: string
 ): Promise<string | null> {
   // Check cache first
@@ -326,7 +325,7 @@ async function searchByAsin(
   try {
     // Build search URL with ASIN and optional format filter
     const formatParam = format && format !== 'any' ? `ext=${format}&` : '';
-    const searchUrl = `${baseUrl}/search?${formatParam}q=%22asin:${asin}%22`;
+    const searchUrl = `${baseUrl}/search?${formatParam}lang=en&q=%22asin:${asin}%22`;
 
     moduleLogger.debug(`ASIN search URL: ${searchUrl}`);
 
@@ -401,7 +400,7 @@ async function searchByTitle(
   author: string,
   format: string,
   baseUrl: string,
-  logger?: JobLogger,
+  logger?: RMABLogger,
   flaresolverrUrl?: string
 ): Promise<string | null> {
   // Check cache first
@@ -491,7 +490,7 @@ async function searchByTitle(
 async function getSlowDownloadLinks(
   md5: string,
   baseUrl: string,
-  logger?: JobLogger,
+  logger?: RMABLogger,
   flaresolverrUrl?: string
 ): Promise<string[]> {
   try {
@@ -576,7 +575,7 @@ async function extractDownloadUrl(
   slowDownloadUrl: string,
   baseUrl: string,
   format: string,
-  logger?: JobLogger,
+  logger?: RMABLogger,
   flaresolverrUrl?: string
 ): Promise<ExtractedDownload | null> {
   try {
@@ -641,7 +640,7 @@ async function extractDownloadUrl(
 async function downloadFile(
   url: string,
   targetPath: string,
-  logger?: JobLogger
+  logger?: RMABLogger
 ): Promise<boolean> {
   try {
     const response = await axios.get(url, {

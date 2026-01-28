@@ -204,4 +204,86 @@ describe('InitializingPage', () => {
     expect(screen.getAllByText(/Job failed to complete/).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Go to Homepage' })).toBeEnabled();
   });
+
+  it('marks jobs as error when scheduled job configuration is missing', async () => {
+    vi.useFakeTimers();
+    const authData = {
+      accessToken: 'token-123',
+      refreshToken: 'refresh-123',
+      user: { id: 'user-1', username: 'admin' },
+    };
+    window.location.hash = `#authData=${encodeURIComponent(JSON.stringify(authData))}`;
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/admin/jobs') {
+        return {
+          ok: true,
+          json: async () => ({
+            jobs: [{ id: 'job-1', type: 'audible_refresh', lastRunJobId: 'run-1' }],
+          }),
+        };
+      }
+      if (url === '/api/admin/job-status/run-1') {
+        return { ok: true, json: async () => ({ job: { status: 'completed' } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: InitializingPage } = await import('@/app/setup/initializing/page');
+
+    render(<InitializingPage />);
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(screen.getAllByText(/Job configuration not found/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Go to Homepage' })).toBeEnabled();
+  });
+
+  it('navigates to homepage when setup is complete', async () => {
+    vi.useFakeTimers();
+    const authData = {
+      accessToken: 'token-123',
+      refreshToken: 'refresh-123',
+      user: { id: 'user-1', username: 'admin' },
+    };
+    window.location.hash = `#authData=${encodeURIComponent(JSON.stringify(authData))}`;
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/admin/jobs') {
+        return {
+          ok: true,
+          json: async () => ({
+            jobs: [
+              { id: 'job-1', type: 'audible_refresh', lastRunJobId: 'run-1' },
+              { id: 'job-2', type: 'plex_library_scan', lastRunJobId: 'run-2' },
+            ],
+          }),
+        };
+      }
+      if (url === '/api/admin/job-status/run-1' || url === '/api/admin/job-status/run-2') {
+        return { ok: true, json: async () => ({ job: { status: 'completed' } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: InitializingPage } = await import('@/app/setup/initializing/page');
+
+    render(<InitializingPage />);
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    await act(async () => {
+      await screen.getByRole('button', { name: 'Go to Homepage' }).click();
+    });
+
+    expect(routerMock.push).toHaveBeenCalledWith('/');
+  });
 });

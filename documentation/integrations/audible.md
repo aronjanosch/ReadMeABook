@@ -88,21 +88,28 @@ Where `{baseUrl}` is determined by configured region (e.g., `https://www.audible
 
 ## Unified Matching (`audiobook-matcher.ts`)
 
-**Status:** ✅ Production Ready
+**Status:** ✅ Production Ready (ASIN-Only Matching)
 
 Single matching algorithm used everywhere (search, popular, new-releases, jobs).
 
-**Process:**
-1. Query DB candidates: `audibleId` exact match OR partial title+author match
-2. If exact ASIN match → return immediately
-3. Fuzzy match: title 70% + author 30% weights, 70% threshold
-4. Return best match or null
+**Process (Library Availability Checks):**
+1. Query DB directly by ASIN (indexed O(1) lookup)
+2. Check ASIN in dedicated field (100% confidence)
+3. Check ASIN in plexGuid (backward compatibility)
+4. Return match or null (no fuzzy fallback)
+
+**Match Priority:**
+- `findPlexMatch()`: ASIN (field) → ASIN (GUID) → null
+- `matchAudiobook()`: ASIN → ISBN → null
 
 **Benefits:**
 - Real-time matching at query time (not pre-matched)
-- Works regardless of job execution order
-- Prevents duplicate `plexGuid` assignments
+- 100% confidence matches only (eliminates false positives)
+- O(1) indexed lookups (faster than fuzzy matching)
+- Solves race condition with Audiobookshelf ASIN population
 - Used by all APIs for consistency
+
+**Note:** Fuzzy matching (70% threshold) is preserved in `ranking-algorithm.ts` for Prowlarr torrent ranking, where it's needed to score multiple release candidates. Library availability checks require exact ASIN matches only.
 
 ## Database-First Approach
 

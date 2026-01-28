@@ -468,8 +468,6 @@ export async function POST(request: NextRequest) {
             provider: bookdate.provider,
             apiKey: encryptedApiKey,
             model: bookdate.model,
-            libraryScope: 'full', // Default value for backwards compatibility
-            customPrompt: null,
             isVerified: true,
             isEnabled: true,
           },
@@ -481,8 +479,6 @@ export async function POST(request: NextRequest) {
             provider: bookdate.provider,
             apiKey: encryptedApiKey,
             model: bookdate.model,
-            libraryScope: 'full', // Default value for backwards compatibility
-            customPrompt: null,
             isVerified: true,
             isEnabled: true,
           },

@@ -77,7 +77,7 @@ Anna's Archive uses Cloudflare protection which may block direct scraping reques
 
 **Method 1: ASIN Search (exact match)**
 ```
-Search: https://annas-archive.li/search?ext=epub&q="asin:B09TWSRMCB"
+Search: https://annas-archive.li/search?ext=epub&lang=en&q="asin:B09TWSRMCB"
   ↓
 MD5 Page: https://annas-archive.li/md5/[md5]
   ↓ (Filter: "slow partner server" links)

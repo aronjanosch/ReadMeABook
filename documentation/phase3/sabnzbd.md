@@ -24,7 +24,10 @@ Free, open-source Usenet/NZB download client with comprehensive Web API. Industr
 **GET /api?mode=history&limit=100&output=json&apikey={key}** - Get completed/failed downloads
 **GET /api?mode=pause&value={nzbId}&output=json&apikey={key}** - Pause download
 **GET /api?mode=resume&value={nzbId}&output=json&apikey={key}** - Resume download
-**GET /api?mode=queue&name=delete&value={nzbId}&del_files={0|1}&output=json&apikey={key}** - Delete download
+**GET /api?mode=queue&name=delete&value={nzbId}&del_files={0|1}&output=json&apikey={key}** - Delete download from queue
+**GET /api?mode=history&name=delete&value={nzbId}&del_files={0|1}&archive={0|1}&output=json&apikey={key}** - Delete/archive download from history
+  - `archive=1` (default): Move to hidden archive (preserves for troubleshooting)
+  - `archive=0`: Permanently delete from history
 **GET /api?mode=get_config&output=json&apikey={key}** - Get configuration (categories)
 **GET /api?mode=set_config&section=categories&keyword={cat}&value={path}&output=json&apikey={key}** - Create/update category
 
@@ -179,6 +182,38 @@ interface HistoryItem {
 **4. Queue vs History Logic** - Checks queue first, falls back to history
 **5. SSL Certificate Errors** - Optional SSL verification disable for self-signed certs
 
+## Automatic Cleanup
+
+**Per-Indexer Configuration:**
+- Usenet indexers have "Remove After Processing" option (default: enabled)
+- When enabled, NZB downloads are automatically cleaned up after files are organized
+- Saves disk space by removing completed download files
+
+**Two-Stage Cleanup Process:**
+1. **Filesystem Cleanup:** Manually deletes download directory/files using `fs.rm()`
+   - Removes extracted files from category download directory
+   - Handles both single files and directories recursively
+   - Gracefully handles already-deleted files (ENOENT)
+
+2. **SABnzbd Archive:** Archives NZB from history (hides from UI)
+   - Uses SABnzbd's archive feature (default: `archive=1`)
+   - Preserves job in hidden archive for troubleshooting/auditing
+   - Does NOT permanently delete from history
+   - Does NOT attempt queue deletion (if still in queue, something went wrong)
+
+**Implementation:**
+- Location: `organize-files.processor.ts`
+- After file organization completes, checks if indexer has `removeAfterProcessing` enabled
+- Filesystem cleanup performed first (critical for disk space)
+- SABnzbd archive performed second (UI cleanup)
+- Non-blocking: logs warnings but doesn't fail the job if cleanup fails
+
+**Why Archive Instead of Delete:**
+- Preserves download history for troubleshooting
+- Maintains records for duplicate detection
+- Allows reviewing past downloads if issues arise
+- Can be viewed in SABnzbd by toggling "Show Archive" in history
+
 ## Comparison: SABnzbd vs qBittorrent
 
 | Feature | SABnzbd | qBittorrent |
@@ -190,6 +225,7 @@ interface HistoryItem {
 | Seeding | N/A (Usenet is not P2P) | Required (tracker) |
 | Categories | Path-based | Path + tag-based |
 | File Handling | Auto-extracts archives | Downloads as-is |
+| Cleanup | Automatic (optional, per-indexer) | Seeding time based |
 
 ## Tech Stack
 

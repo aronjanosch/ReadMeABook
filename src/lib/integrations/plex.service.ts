@@ -776,6 +776,44 @@ export class PlexService {
   }
 
   /**
+   * Delete a library item by ratingKey
+   * Note: Deletion must be enabled in Plex under Settings > Server > Library
+   *
+   * @param serverUrl - The Plex server URL
+   * @param authToken - Authentication token
+   * @param ratingKey - The ratingKey of the item to delete
+   */
+  async deleteItem(
+    serverUrl: string,
+    authToken: string,
+    ratingKey: string
+  ): Promise<void> {
+    try {
+      await this.client.delete(
+        `${serverUrl}/library/metadata/${ratingKey}`,
+        {
+          headers: {
+            'X-Plex-Token': authToken,
+          },
+        }
+      );
+
+      logger.info(`Deleted Plex library item with ratingKey ${ratingKey}`);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        logger.warn('Item not found in Plex library', { ratingKey });
+        // Don't throw - item might already be deleted
+        return;
+      }
+      logger.error('Failed to delete Plex library item', {
+        ratingKey,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw new Error('Failed to delete item from Plex library');
+    }
+  }
+
+  /**
    * Get list of Plex Home users/profiles
    * Returns all managed users and home members for the authenticated account
    */

@@ -124,6 +124,7 @@ describe('IndexersTab - Auto-load Indexers on Tab Activation', () => {
     {
       id: 1,
       name: 'AudioBook Bay',
+      protocol: 'torrent',
       priority: 10,
       seedingTimeMinutes: 4320,
       rssEnabled: true,
@@ -132,8 +133,9 @@ describe('IndexersTab - Auto-load Indexers on Tab Activation', () => {
     {
       id: 2,
       name: 'MyAnonaMouse',
+      protocol: 'usenet',
       priority: 15,
-      seedingTimeMinutes: 10080,
+      removeAfterProcessing: true,
       rssEnabled: false,
       categories: [3030],
     },

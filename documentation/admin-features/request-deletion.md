@@ -96,7 +96,11 @@ model Request {
    - **Audiobookshelf Mode:** Delete library item via API if `absItemId` exists
      - Prevents "ghost" entries in Audiobookshelf library
      - Only removes from ABS database, not files (already deleted in step 3)
-   - **Plex Mode:** Clear plex_library cache records
+   - **Plex Mode:** Delete library item via API if `plexGuid` exists
+     - Queries plex_library table to get plexRatingKey from audiobook's plexGuid
+     - Calls Plex DELETE `/library/metadata/{ratingKey}` endpoint with the ratingKey
+     - Requires deletion enabled in Plex: Settings > Server > Library
+     - Also clears plex_library cache records
 
 5. **Soft Delete Request**
    - UPDATE: `deletedAt = NOW(), deletedBy = adminUserId`
@@ -194,6 +198,9 @@ where: {
 8. ✅ **Network error** - Alert shown, request remains
 9. ✅ **ABS library item deletion fails** - Log error, continue with soft delete
 10. ✅ **No absItemId present** - Skip ABS deletion (not yet in library)
+11. ✅ **Plex library item deletion fails** - Log error, continue with soft delete
+12. ✅ **No plexGuid present** - Skip Plex deletion (not yet in library)
+13. ✅ **Plex deletion not enabled in settings** - Log error, continue with soft delete
 
 ## File Structure
 

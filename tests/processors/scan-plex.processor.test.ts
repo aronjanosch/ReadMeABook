@@ -33,6 +33,7 @@ vi.mock('@/lib/services/job-queue.service', () => ({
 
 vi.mock('@/lib/services/audiobookshelf/api', () => ({
   triggerABSItemMatch: vi.fn(),
+  getABSItem: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -240,7 +241,7 @@ describe('processScanPlex', () => {
     );
   });
 
-  it('matches audiobookshelf requests and triggers metadata match', async () => {
+  it('matches audiobookshelf requests without re-triggering metadata match', async () => {
     configMock.getBackendMode.mockResolvedValue('audiobookshelf');
     configMock.get.mockResolvedValue('abs-lib');
 
@@ -294,7 +295,134 @@ describe('processScanPlex', () => {
         data: expect.objectContaining({ absItemId: 'abs-item-1' }),
       })
     );
-    expect(absApi.triggerABSItemMatch).toHaveBeenCalledWith('abs-item-1', 'ASIN123');
+    // Should NOT trigger metadata match - items with ASIN already have correct metadata
+    expect(absApi.triggerABSItemMatch).not.toHaveBeenCalled();
+  });
+
+  it('uses file hash matching for ABS items without ASIN', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('abs-lib');
+
+    libraryServiceMock.getCoverCachingParams.mockResolvedValue({
+      backendBaseUrl: 'http://abs',
+      authToken: 'token',
+      backendMode: 'audiobookshelf',
+    });
+
+    thumbnailCacheServiceMock.cacheLibraryThumbnail.mockResolvedValue('/app/cache/library/test.jpg');
+
+    // Return an item without ASIN
+    libraryServiceMock.getLibraryItems.mockResolvedValue([
+      {
+        id: 'rating-hash-1',
+        externalId: 'abs-hash-1',
+        title: 'Book Without ASIN',
+        author: 'Author',
+        asin: null, // No ASIN yet
+        addedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    prismaMock.plexLibrary.findFirst.mockResolvedValue(null);
+    prismaMock.plexLibrary.create.mockResolvedValue({});
+    prismaMock.plexLibrary.findMany.mockResolvedValue([]);
+    prismaMock.audiobook.findMany.mockResolvedValue([]);
+    prismaMock.request.findMany.mockResolvedValue([]);
+
+    // Mock getABSItem to return item with audio files
+    const absApi = await import('@/lib/services/audiobookshelf/api');
+    (absApi.getABSItem as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'abs-hash-1',
+      media: {
+        audioFiles: [
+          { metadata: { filename: 'Chapter 01.mp3' } },
+          { metadata: { filename: 'Chapter 02.mp3' } },
+          { metadata: { filename: 'Chapter 03.mp3' } },
+        ],
+      },
+    });
+
+    // Mock findFirst to return matching audiobook with filesHash
+    prismaMock.audiobook.findFirst.mockResolvedValue({
+      id: 'matched-audio-1',
+      audibleAsin: 'MATCHED-ASIN',
+      title: 'Matched Book Title',
+      status: 'completed',
+    } as any);
+
+    const { processScanPlex } = await import('@/lib/processors/scan-plex.processor');
+    const result = await processScanPlex({ jobId: 'job-hash-1' });
+
+    expect(result.success).toBe(true);
+
+    // Verify getABSItem was called
+    expect(absApi.getABSItem).toHaveBeenCalledWith('abs-hash-1');
+
+    // Verify audiobook.findFirst was called with hash matching
+    expect(prismaMock.audiobook.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          filesHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          status: 'completed',
+        }),
+      })
+    );
+
+    // Verify triggerABSItemMatch was called with matched ASIN
+    expect(absApi.triggerABSItemMatch).toHaveBeenCalledWith('abs-hash-1', 'MATCHED-ASIN');
+  });
+
+  it('falls back to fuzzy matching when no file hash match found', async () => {
+    configMock.getBackendMode.mockResolvedValue('audiobookshelf');
+    configMock.get.mockResolvedValue('abs-lib');
+
+    libraryServiceMock.getCoverCachingParams.mockResolvedValue({
+      backendBaseUrl: 'http://abs',
+      authToken: 'token',
+      backendMode: 'audiobookshelf',
+    });
+
+    thumbnailCacheServiceMock.cacheLibraryThumbnail.mockResolvedValue('/app/cache/library/test.jpg');
+
+    // Return an item without ASIN
+    libraryServiceMock.getLibraryItems.mockResolvedValue([
+      {
+        id: 'rating-fuzzy-1',
+        externalId: 'abs-fuzzy-1',
+        title: 'External Book',
+        author: 'Author',
+        asin: null,
+        addedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    prismaMock.plexLibrary.findFirst.mockResolvedValue(null);
+    prismaMock.plexLibrary.create.mockResolvedValue({});
+    prismaMock.plexLibrary.findMany.mockResolvedValue([]);
+    prismaMock.audiobook.findMany.mockResolvedValue([]);
+    prismaMock.request.findMany.mockResolvedValue([]);
+
+    // Mock getABSItem to return item with audio files
+    const absApi = await import('@/lib/services/audiobookshelf/api');
+    (absApi.getABSItem as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'abs-fuzzy-1',
+      media: {
+        audioFiles: [{ metadata: { filename: 'Some File.mp3' } }],
+      },
+    });
+
+    // Mock findFirst to return NO match (external content)
+    prismaMock.audiobook.findFirst.mockResolvedValue(null);
+
+    const { processScanPlex } = await import('@/lib/processors/scan-plex.processor');
+    const result = await processScanPlex({ jobId: 'job-fuzzy-1' });
+
+    expect(result.success).toBe(true);
+
+    // Verify triggerABSItemMatch was called WITHOUT ASIN (fuzzy fallback)
+    expect(absApi.triggerABSItemMatch).toHaveBeenCalledWith('abs-fuzzy-1', undefined);
   });
 });
 

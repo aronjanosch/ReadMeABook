@@ -194,18 +194,13 @@ Result: ASIN match (100% confidence)
 
 ### Step 1: Apply Database Migration
 
-**Option A: Docker Environment (Recommended)**
+**Docker deployment:**
 ```bash
 # The migration will auto-apply on container restart
-docker-compose restart backend
+docker-compose restart readmeabook
 
 # Or apply manually:
-docker-compose exec backend npx prisma migrate deploy
-```
-
-**Option B: Local Development**
-```bash
-npx prisma migrate deploy
+docker-compose exec readmeabook npx prisma migrate deploy
 ```
 
 **What this does:**
@@ -338,6 +333,169 @@ Plex (After Fix):
 3. **Match confidence reporting:** Show match type in UI ("ASIN Match" vs "Fuzzy Match" badge)
 4. **Multi-ASIN support:** Handle cases where one audiobook has multiple regional ASINs
 
+## Phase 2: Fuzzy Matching Removal (January 2026)
+
+**Status:** ✅ Implemented
+**Date:** 2026-01-26
+**Issue:** Race condition with Audiobookshelf causing false positive matches
+
+### Problem Statement
+
+**Race Condition in Audiobookshelf:**
+1. New ABS item discovered → triggers async `triggerABSItemMatch()` to fetch ASIN
+2. Immediately runs library matching (sync) before ASIN populates
+3. Falls back to fuzzy matching (70% threshold)
+4. Result: One book matches entire series → false positives
+
+**Example:**
+- User has "Foundation" (Book 1) in library
+- Download completes for "Foundation and Empire" (Book 2)
+- Library scan runs before ABS populates ASIN
+- Fuzzy matcher: "Foundation and Empire" vs "Foundation" = 75% match ✅
+- Wrong match! Book 2 marked as available, pointing to Book 1
+
+### Root Cause
+
+**Fuzzy matching in library checks creates false positives.** It should only be used for:
+- ✅ **Prowlarr torrent ranking** - Selecting best release from multiple options
+- ❌ **Library availability checks** - Must be exact ASIN matches only
+
+### Solution
+
+Remove fuzzy matching from all library matching functions. Make it strictly ASIN-only.
+
+**Match Priority (After Phase 2):**
+- `findPlexMatch()`: ASIN (field) → ASIN (GUID) → **null** (no fuzzy fallback)
+- `matchAudiobook()`: ASIN → ISBN → **null** (no fuzzy fallback)
+
+**Preserve Fuzzy Matching:**
+- `ranking-algorithm.ts` - Kept untouched (used for Prowlarr torrent selection)
+
+### Implementation Changes
+
+**Critical Fix: Trigger Metadata Match for Items Without ASIN**
+
+To solve the circular dependency (no ASIN → no match → no trigger → no ASIN), added logic to proactively trigger metadata match for ALL Audiobookshelf items without ASIN during library scans:
+
+**File: `src/lib/processors/scan-plex.processor.ts`**
+- After scanning library items, check for items without ASIN
+- Trigger `triggerABSItemMatch()` for each item without ASIN
+- This populates ASIN asynchronously, allowing future scans to match
+
+**File: `src/lib/processors/plex-recently-added.processor.ts`**
+- Same logic added for recently-added checks
+- Ensures new items get ASIN populated immediately
+
+**File: `src/lib/utils/audiobook-matcher.ts`**
+
+**Removed:**
+- Import: `compareTwoStrings` from `string-similarity`
+- Function: `normalizeTitle()` (title normalization helper)
+- Query: Title substring search (replaced with direct ASIN query)
+- Logic: All fuzzy matching in `findPlexMatch()` (lines 190-261 removed)
+- Logic: All fuzzy matching in `matchAudiobook()` (lines 433-479 removed)
+
+**New Implementation:**
+```typescript
+// findPlexMatch() - ASIN-only matching
+export async function findPlexMatch(audiobook: AudiobookMatchInput) {
+  // Query directly by ASIN (indexed O(1) lookup)
+  const plexBooks = await prisma.plexLibrary.findMany({
+    where: {
+      OR: [
+        { asin: audiobook.asin },
+        { plexGuid: { contains: audiobook.asin } },
+      ],
+    },
+  });
+
+  // Priority 1a: ASIN exact match in dedicated field
+  // Priority 1b: ASIN in plexGuid (backward compatibility)
+  // Return null if no ASIN match (no fuzzy fallback)
+}
+
+// matchAudiobook() - ASIN/ISBN only
+export function matchAudiobook(request, libraryItems) {
+  // 1. Exact ASIN match
+  // 2. Exact ISBN match
+  // 3. Return null (no fuzzy fallback)
+}
+```
+
+**Performance Optimization:**
+- Eliminated title substring query (was: `LIKE '%title%' LIMIT 20`)
+- Direct ASIN query using indexed fields (O(1) lookup)
+- ~100 lines of fuzzy matching code removed
+
+**Test Updates:**
+- Updated `audiobook-matcher.test.ts` to expect null for non-ASIN matches
+- Verified ranking-algorithm.ts untouched (fuzzy preserved for torrents)
+
+### Benefits
+
+1. **Eliminates false positives** - "Foundation" won't match "Foundation and Empire"
+2. **Solves race condition** - Items won't match until ASIN populated by ABS
+3. **Faster matching** - O(1) indexed lookups vs O(n²) string comparisons
+4. **Cleaner code** - ~100 lines removed, simpler logic
+5. **Predictable behavior** - Exact matches only, no threshold tuning
+
+### Trade-offs
+
+1. **Lower initial match rate** - Items without ASIN won't match
+   - ABS: 5-10% of items temporarily (until `triggerABSItemMatch()` completes)
+   - Plex: 30-40% if Plex GUID doesn't contain ASIN (agent-dependent)
+2. **User experience** - Some books may show "not in library" temporarily
+   - This is CORRECT behavior - better no match than false positive
+3. **Discovery pages** - "In Your Library" badge only shows for exact ASIN matches
+
+### Match Distribution (Expected)
+
+**Audiobookshelf (After Phase 2):**
+- ASIN exact match: 95%+ (100% confidence)
+- ISBN exact match: 2% (95% confidence)
+- No match: 3% (correct - waiting for ASIN population)
+
+**Plex (After Phase 2):**
+- ASIN exact match (field): 60% (100% confidence)
+- ASIN exact match (GUID): 30% (100% confidence)
+- No match: 10% (correct - no ASIN in metadata)
+
+### Files Modified
+
+**Processors (Critical Fix):**
+- ✅ `src/lib/processors/scan-plex.processor.ts` - Trigger metadata match for items without ASIN (~25 lines added)
+- ✅ `src/lib/processors/plex-recently-added.processor.ts` - Trigger metadata match for items without ASIN (~20 lines added)
+
+**Matching Logic:**
+- ✅ `src/lib/utils/audiobook-matcher.ts` - Removed fuzzy matching (~150 lines modified, ~100 removed)
+
+**Tests:**
+- ✅ `tests/utils/audiobook-matcher.test.ts` - Updated expectations (~20 lines)
+- ✅ `tests/processors/scan-plex.processor.test.ts` - All 4 tests passing
+- ✅ `tests/processors/plex-recently-added.processor.test.ts` - All 3 tests passing
+
+**Documentation:**
+- ✅ `documentation/fixes/asin-matching-fix.md` - Added Phase 2 section
+- ✅ `documentation/integrations/plex.md` - Updated availability checking description
+- ✅ `documentation/integrations/audible.md` - Updated matcher description
+
+**Preserved (Unchanged):**
+- ✅ `src/lib/utils/ranking-algorithm.ts` - Fuzzy matching for Prowlarr (different purpose)
+
+### Verification
+
+**Unit Tests:**
+```bash
+npm run test -- audiobook-matcher.test.ts  # ✅ All 5 tests passing
+```
+
+**Integration Testing:**
+1. Discovery APIs - "In Your Library" badge only for exact ASIN matches ✅
+2. Request creation - "Already in library" check works with ASIN ✅
+3. Library scanning - Downloaded requests only match if ASIN present ✅
+4. BookDate - `isInLibrary()` check works with ASIN-only ✅
+5. Prowlarr ranking - Fuzzy matching still works (unchanged) ✅
+
 ## Conclusion
 
 This fix resolves the critical ASIN matching issue for Audiobookshelf by implementing a robust, universal metadata storage architecture. The solution is:
@@ -347,4 +505,10 @@ This fix resolves the critical ASIN matching issue for Audiobookshelf by impleme
 - **Well-tested:** Follows established patterns from existing codebase
 - **Future-proof:** Easy to extend for new backends or metadata types
 
-**Status:** ✅ Code complete, awaiting database migration and testing
+**Phase 2 Enhancement:**
+- **Eliminates false positives:** ASIN-only matching prevents wrong-book matches
+- **Solves race condition:** Items wait for ASIN population before matching
+- **Preserves critical functionality:** Fuzzy matching kept for Prowlarr torrent ranking
+- **Improves performance:** O(1) indexed lookups replace O(n²) string comparisons
+
+**Status:** ✅ Both phases complete and production-ready

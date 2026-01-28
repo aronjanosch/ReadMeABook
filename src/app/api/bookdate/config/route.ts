@@ -39,7 +39,7 @@ async function getConfig(req: AuthenticatedRequest) {
 async function saveConfig(req: AuthenticatedRequest) {
   try {
     const body = await req.json();
-    const { provider, apiKey, model, baseUrl, libraryScope, customPrompt, isEnabled } = body;
+    const { provider, apiKey, model, baseUrl, isEnabled } = body;
 
     // Check if config exists
     const existingConfig = await prisma.bookDateConfig.findFirst();
@@ -143,14 +143,11 @@ async function saveConfig(req: AuthenticatedRequest) {
       });
     } else {
       // Create new global config
-      // Note: libraryScope and customPrompt are now per-user settings (deprecated in global config)
       config = await prisma.bookDateConfig.create({
         data: {
           provider,
           model,
           baseUrl: provider === 'custom' ? baseUrl : null,
-          libraryScope: 'full', // Default value for backwards compatibility
-          customPrompt: null,
           isEnabled: isEnabled !== undefined ? isEnabled : true,
           isVerified: true,
           apiKey: encryptedApiKeyToUse,

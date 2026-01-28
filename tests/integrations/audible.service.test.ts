@@ -192,7 +192,10 @@ describe('AudibleService', () => {
 
   it('returns empty search results on failures', async () => {
     configServiceMock.getAudibleRegion.mockResolvedValue('us');
-    clientMock.get.mockRejectedValue(new Error('nope'));
+    // Use 404 error which is not retryable
+    const error: any = new Error('Not Found');
+    error.response = { status: 404 };
+    clientMock.get.mockRejectedValue(error);
 
     const service = new AudibleService();
     const result = await service.search('oops', 1);

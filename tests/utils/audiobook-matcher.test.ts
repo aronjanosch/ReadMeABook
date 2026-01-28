@@ -61,17 +61,8 @@ describe('audiobook-matcher', () => {
     expect(match).toBeNull();
   });
 
-  it('uses narrator matching when author match is weak', async () => {
-    prismaMock.plexLibrary.findMany.mockResolvedValue([
-      {
-        plexGuid: 'guid-narrator',
-        plexRatingKey: null,
-        title: 'Great Book',
-        author: 'Jane Narrator',
-        asin: null,
-        isbn: null,
-      },
-    ]);
+  it('returns null when no ASIN match exists (fuzzy matching removed)', async () => {
+    prismaMock.plexLibrary.findMany.mockResolvedValue([]);
 
     const { findPlexMatch } = await import('@/lib/utils/audiobook-matcher');
     const match = await findPlexMatch({
@@ -81,10 +72,10 @@ describe('audiobook-matcher', () => {
       narrator: 'Jane Narrator',
     });
 
-    expect(match?.plexGuid).toBe('guid-narrator');
+    expect(match).toBeNull();
   });
 
-  it('matches library items by ASIN, ISBN, then fuzzy match', async () => {
+  it('matches library items by ASIN or ISBN only (no fuzzy fallback)', async () => {
     const items = [
       { id: '1', externalId: 'g1', title: 'Alpha', author: 'Author A', asin: 'ASIN1' },
       { id: '2', externalId: 'g2', title: 'Beta', author: 'Author B', isbn: '978-1-23456-789-7' },
@@ -98,8 +89,8 @@ describe('audiobook-matcher', () => {
     const isbnMatch = matchAudiobook({ title: 'x', author: 'y', isbn: '9781234567897' }, items);
     expect(isbnMatch?.externalId).toBe('g2');
 
-    const fuzzyMatch = matchAudiobook({ title: 'Gamma Book', author: 'Author C' }, items);
-    expect(fuzzyMatch?.externalId).toBe('g3');
+    const noMatch = matchAudiobook({ title: 'Gamma Book', author: 'Author C' }, items);
+    expect(noMatch).toBeNull();
   });
 
   it('enriches audiobooks with availability and request status', async () => {

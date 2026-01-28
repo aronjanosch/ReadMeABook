@@ -87,6 +87,10 @@
 - **Request deletion (soft delete, seeding awareness)** → [admin-features/request-deletion.md](admin-features/request-deletion.md)
 - **Request approval system, auto-approve settings** → [admin-features/request-approval.md](admin-features/request-approval.md)
 
+## Fixes & Improvements
+- **File hash-based library matching (ABS)** → [fixes/file-hash-matching.md](fixes/file-hash-matching.md)
+- **Accurate ASIN matching for RMAB-organized content** → [fixes/file-hash-matching.md](fixes/file-hash-matching.md)
+
 ## Deployment
 - **Docker Compose setup (multi-container)** → [deployment/docker.md](deployment/docker.md)
 - **Unified container (all-in-one)** → [deployment/unified.md](deployment/unified.md)
@@ -125,3 +129,5 @@
 **"How do I switch from Plex to Audiobookshelf?"** → [features/audiobookshelf-integration.md](features/audiobookshelf-integration.md) (PRD only, not implemented)
 **"How does library thumbnail caching work?"** → [features/library-thumbnail-cache.md](features/library-thumbnail-cache.md)
 **"Why do BookDate library books show placeholders?"** → [features/library-thumbnail-cache.md](features/library-thumbnail-cache.md)
+**"How does file hash matching work?"** → [fixes/file-hash-matching.md](fixes/file-hash-matching.md)
+**"Why is ABS matching the wrong book?"** → [fixes/file-hash-matching.md](fixes/file-hash-matching.md) (file hash prevents false positives)

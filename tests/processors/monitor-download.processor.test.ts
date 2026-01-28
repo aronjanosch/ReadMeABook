@@ -253,6 +253,41 @@ describe('processMonitorDownload', () => {
       })
     );
   });
+
+  it('converts SABnzbd progress from 0.0-1.0 to 0-100 percentage', async () => {
+    sabMock.getNZB.mockResolvedValue({
+      nzbId: 'nzb-3',
+      size: 1000000000, // 1GB
+      progress: 0.35, // 35% in decimal format (0.0-1.0)
+      status: 'downloading',
+      downloadSpeed: 5000000, // 5MB/s
+      timeLeft: 130,
+    });
+    prismaMock.request.update.mockResolvedValue({});
+    prismaMock.downloadHistory.update.mockResolvedValue({});
+
+    const { processMonitorDownload } = await import('@/lib/processors/monitor-download.processor');
+    const result = await processMonitorDownload({
+      requestId: 'req-8',
+      downloadHistoryId: 'dh-8',
+      downloadClientId: 'nzb-3',
+      downloadClient: 'sabnzbd',
+      jobId: 'job-8',
+    });
+
+    expect(result.completed).toBe(false);
+    expect(result.progress).toBe(35); // Should be converted to 35 (not 0.35)
+
+    // Verify database was updated with correct percentage (0-100, not 0.0-1.0)
+    expect(prismaMock.request.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'req-8' },
+        data: expect.objectContaining({
+          progress: 35, // Should be 35, not 0.35
+        }),
+      })
+    );
+  });
 });
 
 

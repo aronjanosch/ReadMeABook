@@ -36,6 +36,12 @@ export interface IndexerFlagConfig {
   modifier: number;     // -100 to 100 (percentage)
 }
 
+export interface RankTorrentsOptions {
+  indexerPriorities?: Map<number, number>;  // indexerId -> priority (1-25)
+  flagConfigs?: IndexerFlagConfig[];         // Flag bonus configurations
+  requireAuthor?: boolean;                   // Enforce author presence check (default: true)
+}
+
 export interface BonusModifier {
   type: 'indexer_priority' | 'indexer_flag' | 'custom';
   value: number;        // Multiplier (e.g., 0.4 for 40%)
@@ -66,15 +72,18 @@ export class RankingAlgorithm {
    * Rank all torrents and return sorted by finalScore (best first)
    * @param torrents - Array of torrent results to rank
    * @param audiobook - Audiobook request details for matching (includes durationMinutes for size scoring)
-   * @param indexerPriorities - Optional map of indexerId to priority (1-25), defaults to 10
-   * @param flagConfigs - Optional array of flag configurations for bonus/penalty modifiers
+   * @param options - Optional configuration for ranking behavior
    */
   rankTorrents(
     torrents: TorrentResult[],
     audiobook: AudiobookRequest,
-    indexerPriorities?: Map<number, number>,
-    flagConfigs?: IndexerFlagConfig[]
+    options: RankTorrentsOptions = {}
   ): RankedTorrent[] {
+    const {
+      indexerPriorities,
+      flagConfigs,
+      requireAuthor = true  // Safe default: require author in automatic mode
+    } = options;
     // Filter out files < 20 MB (likely ebooks/samples)
     const filteredTorrents = torrents.filter((torrent) => {
       const sizeMB = torrent.size / (1024 * 1024);
@@ -86,7 +95,7 @@ export class RankingAlgorithm {
       const formatScore = this.scoreFormat(torrent);
       const sizeScore = this.scoreSize(torrent, audiobook.durationMinutes);
       const seederScore = this.scoreSeeders(torrent.seeders);
-      const matchScore = this.scoreMatch(torrent, audiobook);
+      const matchScore = this.scoreMatch(torrent, audiobook, requireAuthor);
 
       const baseScore = formatScore + sizeScore + seederScore + matchScore;
 
@@ -183,12 +192,13 @@ export class RankingAlgorithm {
    */
   getScoreBreakdown(
     torrent: TorrentResult,
-    audiobook: AudiobookRequest
+    audiobook: AudiobookRequest,
+    requireAuthor: boolean = true
   ): ScoreBreakdown {
     const formatScore = this.scoreFormat(torrent);
     const sizeScore = this.scoreSize(torrent, audiobook.durationMinutes);
     const seederScore = this.scoreSeeders(torrent.seeders);
-    const matchScore = this.scoreMatch(torrent, audiobook);
+    const matchScore = this.scoreMatch(torrent, audiobook, requireAuthor);
     const totalScore = formatScore + sizeScore + seederScore + matchScore;
 
     return {
@@ -297,7 +307,8 @@ export class RankingAlgorithm {
    */
   private scoreMatch(
     torrent: TorrentResult,
-    audiobook: AudiobookRequest
+    audiobook: AudiobookRequest,
+    requireAuthor: boolean = true
   ): number {
     // Normalize whitespace (multiple spaces → single space) for consistent matching
     const torrentTitle = torrent.title.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -354,6 +365,14 @@ export class RankingAlgorithm {
         // Automatic rejection - doesn't contain enough of the requested words
         return 0;
       }
+    }
+
+    // ========== STAGE 1.5: AUTHOR PRESENCE CHECK (OPTIONAL) ==========
+    // Only enforced in automatic mode (requireAuthor: true)
+    // Interactive search (requireAuthor: false) shows all results
+    if (requireAuthor && !this.checkAuthorPresence(torrentTitle, requestAuthor)) {
+      // No high-confidence author match → reject to prevent wrong-author matches
+      return 0;
     }
 
     // ========== STAGE 2: TITLE MATCHING (0-35 points) ==========
@@ -453,6 +472,60 @@ export class RankingAlgorithm {
     }
 
     return Math.min(60, titleScore + authorScore);
+  }
+
+  /**
+   * Check if author is present in torrent title with high confidence
+   * Handles variations: middle initials, spacing, punctuation, name order
+   *
+   * @param torrentTitle - Normalized torrent title (lowercase)
+   * @param requestAuthor - Normalized author name (lowercase)
+   * @returns true if at least ONE author is present with high confidence
+   */
+  private checkAuthorPresence(torrentTitle: string, requestAuthor: string): boolean {
+    // Parse multiple authors (same logic as Stage 3 author matching)
+    const authors = requestAuthor
+      .split(/,|&| and | - /)
+      .map(a => a.trim())
+      .filter(a => a.length > 2 && !['translator', 'narrator'].includes(a));
+
+    // At least ONE author must match with high confidence
+    return authors.some(author => {
+      // Check 1: Exact substring match
+      if (torrentTitle.includes(author)) {
+        return true;
+      }
+
+      // Check 2: High fuzzy similarity (≥ 0.85)
+      // Handles: "J.K. Rowling" vs "J. K. Rowling" vs "JK Rowling"
+      // Also handles: "Dennis E. Taylor" vs "Dennis Taylor"
+      const similarity = compareTwoStrings(author, torrentTitle);
+      if (similarity >= 0.85) {
+        return true;
+      }
+
+      // Check 3: Core name components (first + last name present within 30 chars)
+      // Handles: "Sanderson, Brandon" vs "Brandon Sanderson"
+      // Handles: "Brandon R. Sanderson" vs "Brandon Sanderson"
+      const words = author.split(/\s+/).filter(w => w.length > 1);
+      if (words.length >= 2) {
+        const firstName = words[0];
+        const lastName = words[words.length - 1];
+
+        const firstIdx = torrentTitle.indexOf(firstName);
+        const lastIdx = torrentTitle.indexOf(lastName);
+
+        // Both components present and reasonably close?
+        if (firstIdx !== -1 && lastIdx !== -1) {
+          const distance = Math.abs(lastIdx - firstIdx);
+          if (distance <= 30) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    });
   }
 
   /**
@@ -563,15 +636,52 @@ export function getRankingAlgorithm(): RankingAlgorithm {
 
 /**
  * Helper function to rank torrents using the singleton instance
+ *
+ * @param torrents - Array of torrent results to rank
+ * @param audiobook - Audiobook request details
+ * @param options - Optional ranking configuration
+ * @returns Ranked torrents with quality scores
+ */
+export function rankTorrents(
+  torrents: TorrentResult[],
+  audiobook: AudiobookRequest,
+  options?: RankTorrentsOptions
+): (RankedTorrent & { qualityScore: number })[];
+
+/**
+ * Helper function to rank torrents using the singleton instance (legacy signature)
+ * @deprecated Use options object instead
  */
 export function rankTorrents(
   torrents: TorrentResult[],
   audiobook: AudiobookRequest,
   indexerPriorities?: Map<number, number>,
   flagConfigs?: IndexerFlagConfig[]
+): (RankedTorrent & { qualityScore: number })[];
+
+export function rankTorrents(
+  torrents: TorrentResult[],
+  audiobook: AudiobookRequest,
+  optionsOrPriorities?: RankTorrentsOptions | Map<number, number>,
+  flagConfigs?: IndexerFlagConfig[]
 ): (RankedTorrent & { qualityScore: number })[] {
   const algorithm = getRankingAlgorithm();
-  const ranked = algorithm.rankTorrents(torrents, audiobook, indexerPriorities, flagConfigs);
+
+  // Handle both new options object and legacy parameters
+  let options: RankTorrentsOptions;
+  if (optionsOrPriorities instanceof Map) {
+    // Legacy call: rankTorrents(torrents, audiobook, priorities, flags)
+    options = {
+      indexerPriorities: optionsOrPriorities,
+      flagConfigs,
+      requireAuthor: true  // Safe default
+    };
+  } else {
+    // New call: rankTorrents(torrents, audiobook, options)
+    options = optionsOrPriorities || {};
+  }
+
+  const ranked = algorithm.rankTorrents(torrents, audiobook, options);
 
   // Add qualityScore field for UI compatibility (rounded score)
   return ranked.map((r) => ({

@@ -23,8 +23,10 @@ interface ProwlarrIndexer {
 interface SavedIndexerConfig {
   id: number;
   name: string;
+  protocol: string;
   priority: number;
-  seedingTimeMinutes: number;
+  seedingTimeMinutes?: number; // Torrents only
+  removeAfterProcessing?: boolean; // Usenet only
   rssEnabled: boolean;
   categories: number[];
 }
@@ -134,7 +136,7 @@ export function IndexerManagement({
       indexer: indexer || {
         id: config.id,
         name: config.name,
-        protocol: 'torrent', // Default fallback
+        protocol: config.protocol,
         supportsRss: config.rssEnabled,
       },
       currentConfig: config,
@@ -251,7 +253,7 @@ export function IndexerManagement({
                 indexer={{
                   id: config.id,
                   name: config.name,
-                  protocol: 'torrent', // Will be populated correctly from fetched data
+                  protocol: config.protocol,
                 }}
                 onEdit={() => openEditModal(config)}
                 onDelete={() => handleDelete(config.id)}

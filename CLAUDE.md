@@ -1,6 +1,6 @@
 # CLAUDE.md - Project Standards & Workflow
 
-**Critical:** This document defines AI-optimized documentation standards and development workflow.
+**Critical:** This document defines AI-optimized documentation standards and development workflow. **NEVER PERFORM COMMITS ON THE REPOSITORY.**
 
 ---
 

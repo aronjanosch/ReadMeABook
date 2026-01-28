@@ -192,14 +192,3 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
   );
 }
 
-/**
- * Confirmation Dialog Hook
- */
-export function useConfirm() {
-  return useCallback((message: string): Promise<boolean> => {
-    return new Promise((resolve) => {
-      const result = window.confirm(message);
-      resolve(result);
-    });
-  }, []);
-}

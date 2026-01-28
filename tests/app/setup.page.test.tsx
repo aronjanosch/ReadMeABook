@@ -94,6 +94,12 @@ const mockSetupModules = () => {
         <button type="button" onClick={() => onChange('oidc')}>
           Choose OIDC
         </button>
+        <button type="button" onClick={() => onChange('manual')}>
+          Choose Manual
+        </button>
+        <button type="button" onClick={() => onChange('both')}>
+          Choose Both
+        </button>
         <button type="button" onClick={onNext}>
           Next
         </button>
@@ -102,10 +108,28 @@ const mockSetupModules = () => {
   }));
 
   vi.doMock(path.resolve('src/app/setup/steps/OIDCConfigStep.tsx'), () => ({
-    OIDCConfigStep: ({ onNext }: { onNext: () => void }) => (
-      <button type="button" onClick={onNext}>
-        Next
-      </button>
+    OIDCConfigStep: ({
+      onNext,
+      onUpdate,
+    }: {
+      onNext: () => void;
+      onUpdate: (field: string, value: string) => void;
+    }) => (
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            onUpdate('oidcAccessControlMethod', 'allowed_list');
+            onUpdate('oidcAllowedEmails', 'user1@example.com, user2@example.com');
+            onUpdate('oidcAllowedUsernames', 'john, jane');
+          }}
+        >
+          Set Allowed Lists
+        </button>
+        <button type="button" onClick={onNext}>
+          Next
+        </button>
+      </div>
     ),
   }));
 
@@ -259,5 +283,100 @@ describe('SetupWizard', () => {
     expect(requestBody.audiobookshelf).toBeDefined();
     expect(requestBody.oidc).toBeDefined();
     expect(requestBody.admin).toBeUndefined();
+  });
+
+  it('completes setup in manual auth mode and includes registration settings', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/setup/complete') {
+        return makeJsonResponse({
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          user: { id: 'admin-1', username: 'admin' },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    vi.resetModules();
+    mockSetupModules();
+    const { default: SetupWizard } = await import('@/app/setup/page');
+    render(<SetupWizard />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose ABS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose Manual' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    for (let i = 0; i < 6; i += 1) {
+      fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    }
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete' }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem('accessToken')).toBe('access-token');
+      expect(screen.getByTestId('finalize')).toHaveTextContent('admin');
+    });
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(requestBody.backendMode).toBe('audiobookshelf');
+    expect(requestBody.authMethod).toBe('manual');
+    expect(requestBody.registration).toEqual({
+      enabled: true,
+      require_admin_approval: true,
+    });
+    expect(requestBody.admin).toBeDefined();
+    expect(requestBody.oidc).toBeUndefined();
+    expect(requestBody.bookdate).toBeNull();
+  });
+
+  it('serializes OIDC allowed lists as JSON arrays', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/setup/complete') {
+        return makeJsonResponse({ success: true });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    vi.resetModules();
+    mockSetupModules();
+    const { default: SetupWizard } = await import('@/app/setup/page');
+    render(<SetupWizard />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose ABS' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose OIDC' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Set Allowed Lists' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    for (let i = 0; i < 4; i += 1) {
+      fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
+    }
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Complete' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(requestBody.oidc.allowed_emails).toBe(
+      JSON.stringify(['user1@example.com', 'user2@example.com'])
+    );
+    expect(requestBody.oidc.allowed_usernames).toBe(JSON.stringify(['john', 'jane']));
   });
 });

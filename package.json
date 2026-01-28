@@ -13,11 +13,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "db:push": "prisma db push",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:push": "prisma db push"
   },
   "dependencies": {
-    "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
     "@prisma/client": "^6.19.0",
     "axios": "^1.7.2",
@@ -35,7 +33,6 @@
     "parse-torrent": "^11.0.19",
     "react": "19.2.1",
     "react-dom": "19.2.1",
-    "react-hook-form": "^7.66.0",
     "react-swipeable": "^7.0.1",
     "string-similarity": "^4.0.4",
     "swr": "^2.3.6",

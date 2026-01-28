@@ -24,10 +24,6 @@ const axiosMock = vi.hoisted(() => ({
   get: vi.fn(),
 }));
 
-const jobLoggerMock = vi.hoisted(() => ({
-  createJobLogger: vi.fn(),
-}));
-
 const metadataMock = vi.hoisted(() => ({
   tagMultipleFiles: vi.fn(),
   checkFfmpegAvailable: vi.fn(),
@@ -48,6 +44,12 @@ const loggerMock = vi.hoisted(() => ({
       debug: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
+    })),
+    forJob: vi.fn(() => ({
+      info: vi.fn().mockResolvedValue(undefined),
+      warn: vi.fn().mockResolvedValue(undefined),
+      error: vi.fn().mockResolvedValue(undefined),
+      debug: vi.fn(),
     })),
   },
 }));
@@ -79,7 +81,6 @@ vi.mock('axios', () => ({
   ...axiosMock,
 }));
 
-vi.mock('@/lib/utils/job-logger', () => jobLoggerMock);
 vi.mock('@/lib/utils/metadata-tagger', () => metadataMock);
 vi.mock('@/lib/utils/chapter-merger', () => chapterMock);
 vi.mock('@/lib/utils/logger', () => loggerMock);
@@ -111,13 +112,6 @@ describe('file organizer', () => {
     fsMock.copyFile.mockResolvedValue(undefined);
     fsMock.chmod.mockResolvedValue(undefined);
 
-    const logger = {
-      info: vi.fn().mockResolvedValue(undefined),
-      warn: vi.fn().mockResolvedValue(undefined),
-      error: vi.fn().mockResolvedValue(undefined),
-    };
-    jobLoggerMock.createJobLogger.mockReturnValue(logger);
-
     const organizer = new FileOrganizer('/media', '/tmp');
     const result = await organizer.organize(
       '/downloads/book.m4b',
@@ -140,7 +134,7 @@ describe('file organizer', () => {
     expect(result.audioFiles).toEqual([expectedAudio]);
     expect(result.coverArtFile).toBe(path.join(expectedDir, 'cover.jpg'));
     expect(result.filesMovedCount).toBe(1);
-    expect(jobLoggerMock.createJobLogger).toHaveBeenCalledWith('job-1', 'organize');
+    expect(loggerMock.RMABLogger.forJob).toHaveBeenCalledWith('job-1', 'organize');
     expect(metadataMock.tagMultipleFiles).not.toHaveBeenCalled();
   });
 

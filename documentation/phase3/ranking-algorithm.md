@@ -1,8 +1,35 @@
 # Intelligent Ranking Algorithm
 
-**Status:** ✅ Implemented
+**Status:** ✅ Implemented | Comprehensive edge case test coverage
+**Tests:** tests/utils/ranking-algorithm.test.ts (73 test cases)
 
 Evaluates and scores torrents to automatically select best audiobook download.
+
+## Test Coverage
+
+**Comprehensive edge case testing includes:**
+- ✅ Parenthetical/bracketed content handling (4 tests)
+- ✅ Structured metadata prefix validation (5 tests)
+- ✅ Suffix validation (5 tests)
+- ✅ Multi-author handling (6 tests)
+- ✅ Bonus modifiers (indexer priority + flags, 7 tests)
+- ✅ Tiebreaker sorting (2 tests)
+- ✅ Word coverage edge cases (4 tests)
+- ✅ Format detection (5 tests)
+- ✅ **Author presence check (10 tests)**
+- ✅ **Context-aware filtering (3 tests)**
+- ✅ **API compatibility (2 tests)**
+
+**Tested edge cases prevent regressions from previous tweaks:**
+- "We Are Legion (We Are Bob)" matching with/without subtitle
+- "This Inevitable Ruin Dungeon Crawler Carl" NOT matching "Dungeon Crawler Carl"
+- "The Housemaid's Secret" NOT matching "The Housemaid"
+- Multiple author splitting and role filtering
+- Flag bonus stacking and case-insensitive matching
+- Tiebreaker sorting by publish date
+- **"Project Hail Mary" (no author) NOT matching when Andy Weir required (automatic mode)**
+- **All results shown in interactive mode regardless of author**
+- **Middle initials, name order, and role filtering for author matching**
 
 ## Scoring Criteria (100 points max)
 
@@ -15,13 +42,35 @@ Evaluates and scores torrents to automatically select best audiobook download.
 - **Parenthetical/bracketed content is optional**: Content in () [] {} treated as subtitle (may be omitted from torrents)
   - "We Are Legion (We Are Bob)" → Required: ["we", "are", "legion"], Optional: ["bob"]
   - "Title [Series Name]" → Required: ["title"], Optional: ["series", "name"]
+  - "Book Title {Extra Info}" → Required: ["book", "title"], Optional: ["extra", "info"]
 - Calculates coverage: % of **required** words found in torrent title
 - **Hard requirement: 80%+ coverage of required words or automatic 0 score**
-- Example: "The Wild Robot on the Island" → ["wild", "robot", "island"]
-  - "The Wild Robot" → ["wild", "robot"] → 2/3 = 67% → **REJECTED**
-  - "The Wild Robot on the Island" → 3/3 = 100% → **PASSES**
-- Example: "We Are Legion (We Are Bob)" → Required: ["we", "are", "legion"]
-  - "Dennis E. Taylor - Bobiverse - 01 - We Are Legion" → 3/3 = 100% → **PASSES**
+
+**Stage 1.5: Author Presence Check (CONTEXT-AWARE)**
+- **Automatic mode (requireAuthor: true - default):** At least ONE author must be present with high confidence
+- **Interactive mode (requireAuthor: false):** Check disabled, all results shown to user
+- **High confidence = any of:**
+  1. Exact substring match: "dennis e. taylor" in torrent
+  2. High fuzzy similarity (≥ 0.85): handles spacing/punctuation
+  3. Core components present: First name + Last name within 30 chars
+- Handles variations:
+  - Middle initials: "Dennis E. Taylor" ↔ "Dennis Taylor"
+  - Name order: "Brandon Sanderson" ↔ "Sanderson, Brandon"
+  - Multiple authors: Only ONE needs to match (OR logic)
+  - Filters roles: "translator", "narrator" ignored
+- **If check fails in automatic mode → automatic 0 score**
+- **Prevents wrong-author matches**: Stops "Project Hail Mary" (no author) from matching request for Andy Weir
+
+**Edge Cases - Coverage Examples:**
+- "The Wild Robot on the Island" → ["wild", "robot", "island"]
+  - ✅ "The Wild Robot on the Island" → 3/3 = 100% → **PASSES**
+  - ❌ "The Wild Robot" → 2/3 = 67% → **REJECTED**
+- "We Are Legion (We Are Bob)" → Required: ["we", "are", "legion"]
+  - ✅ "Dennis E. Taylor - Bobiverse - 01 - We Are Legion" → 3/3 = 100% → **PASSES**
+  - ✅ "We Are Legion (We Are Bob)" → 3/3 = 100% → **PASSES**
+- "Harry Potter and the Philosopher Stone" → ["harry", "potter", "philosopher", "stone"] (stop words filtered)
+  - ✅ "Harry Potter Philosopher Stone" → 4/4 = 100% → **PASSES**
+  - ❌ "Harry Potter" → 2/4 = 50% → **REJECTED**
 - Prevents wrong series books from matching while handling common subtitle patterns
 
 **Stage 2: Title Matching (0-45 pts)**
@@ -35,21 +84,43 @@ Evaluates and scores torrents to automatically select best audiobook download.
     - Title preceded by metadata separator (` - `, `: `, `—`) — handles "Author - Series - 01 - Title"
     - Author name appears in prefix — handles "Author Name - Title"
   - **Acceptable suffix**: Followed by metadata markers: " by", " [", " -", " (", " {", " :", "," or end of string
+    - Also accepts author name in suffix (e.g., "Title AuthorName Year")
 - Complete match → 45 pts
 - Unstructured prefix (words without separators) → fuzzy similarity (partial credit)
-  - Prevents: "This Inevitable Ruin Dungeon Crawler Carl" matching "Dungeon Crawler Carl"
 - Suffix continues with non-metadata → fuzzy similarity (partial credit)
-  - Prevents: "The Housemaid's Secret" matching "The Housemaid"
 - No substring match → fuzzy similarity (best score from full or required title)
+
+**Edge Cases - Prefix Validation:**
+- ✅ "Brandon Sanderson - Mistborn - 01 - The Final Empire" (structured metadata prefix)
+- ✅ "Brandon Sanderson The Way of Kings" (author name in prefix)
+- ✅ "Series Name: Book Title" (colon separator)
+- ✅ "Author Name — Book Title" (em-dash separator)
+- ❌ "This Inevitable Ruin Dungeon Crawler Carl" → REJECTED for "Dungeon Crawler Carl" (unstructured words before title)
+
+**Edge Cases - Suffix Validation:**
+- ✅ "The Great Book by Author Name" (metadata marker " by")
+- ✅ "Book Title [Unabridged] (2024)" (bracketed metadata)
+- ✅ "Book Title John Smith 2024" (author name in suffix)
+- ✅ "Author - Book Title" (title at end of string)
+- ❌ "The Housemaid's Secret - Freida McFadden" → REJECTED for "The Housemaid" (suffix continues with "'s Secret")
 
 **Stage 3: Author Matching (0-15 pts)**
 - Exact substring match → proportional credit
 - No exact match → fuzzy similarity (partial credit)
 - Splits authors on delimiters (comma, &, "and", " - ")
 - Filters out roles ("translator", "narrator")
-
 - Order-independent, no structure assumptions
 - Ensures correct book is selected over wrong book with better format
+
+**Edge Cases - Multi-Author Handling:**
+- ✅ "Jane Doe, John Smith" → splits on comma
+- ✅ "Jane Doe & John Smith" → splits on ampersand
+- ✅ "Jane Doe and John Smith" → splits on "and"
+- ✅ "Jane Doe, translator" → filters out "translator" role
+- ✅ "Jane Doe, narrator" → filters out "narrator" role
+- Proportional credit: If 1 of 3 authors matches → 5 pts (1/3 × 15)
+- Proportional credit: If 2 of 3 authors match → 10 pts (2/3 × 15)
+- Full credit: If all authors match → 15 pts
 
 **2. Format Quality (25 pts max)**
 - M4B with chapters: 25
@@ -93,6 +164,16 @@ Evaluates and scores torrents to automatically select best audiobook download.
 - Universal across all indexers (not indexer-specific)
 - Multiple flag bonuses stack (additive)
 
+**Edge Cases - Flag Matching:**
+- ✅ "FREELEECH" matches config "freeleech" (case-insensitive)
+- ✅ "  Freeleech  " matches config " Freeleech " (whitespace-trimmed)
+- ✅ Multiple flags: ["Freeleech", "Double Upload"] → both bonuses applied
+- Example stacking: Freeleech (+50%) + Double Upload (+25%) on 80 base score
+  - Freeleech bonus: 80 × 0.5 = +40
+  - Double Upload bonus: 80 × 0.25 = +20
+  - Total bonus: +60 points
+  - Final score: 80 + 60 = 140
+
 **Future Modifiers (planned):**
 - User preferences
 - Custom rules
@@ -114,12 +195,26 @@ When multiple torrents have identical final scores:
 - Ensures latest uploads are preferred when quality is equal
 - Example: 3 torrents with 171 final score → newest upload ranks #1
 
+**Edge Cases - Tiebreaker Examples:**
+- ✅ Same score, different dates:
+  - Torrent A: Score 85, published 2024-06-01 → **Ranks #1**
+  - Torrent B: Score 85, published 2023-01-01 → Ranks #2
+- ❌ Different scores, ignore date:
+  - Torrent A: Score 95, published 2020-01-01 → **Ranks #1** (better match wins despite older date)
+  - Torrent B: Score 75, published 2024-01-01 → Ranks #2
+
 ## Interface
 
 ```typescript
 interface IndexerFlagConfig {
   name: string;         // Flag name (e.g., "Freeleech")
   modifier: number;     // -100 to 100 (percentage)
+}
+
+interface RankTorrentsOptions {
+  indexerPriorities?: Map<number, number>;  // indexerId -> priority (1-25)
+  flagConfigs?: IndexerFlagConfig[];        // Flag bonus configurations
+  requireAuthor?: boolean;                  // Enforce author check (default: true)
 }
 
 interface BonusModifier {
@@ -149,12 +244,46 @@ interface RankedTorrent extends TorrentResult {
   };
 }
 
+// New API (recommended)
 function rankTorrents(
   torrents: TorrentResult[],
   audiobook: AudiobookRequest,
-  indexerPriorities?: Map<number, number>,  // indexerId -> priority (1-25)
-  flagConfigs?: IndexerFlagConfig[]         // Flag bonus configurations
+  options?: RankTorrentsOptions
 ): RankedTorrent[];
+
+// Legacy API (backwards compatible)
+function rankTorrents(
+  torrents: TorrentResult[],
+  audiobook: AudiobookRequest,
+  indexerPriorities?: Map<number, number>,
+  flagConfigs?: IndexerFlagConfig[]
+): RankedTorrent[];
+```
+
+## Usage Examples
+
+**Automatic selection (strict author filtering):**
+```typescript
+// Background job - safe auto-download
+const ranked = rankTorrents(torrents, audiobook, {
+  indexerPriorities,
+  flagConfigs,
+  requireAuthor: true  // Default - prevents wrong authors
+});
+
+const topResult = ranked[0];  // Safe to auto-download
+```
+
+**Interactive search (show all results):**
+```typescript
+// User browsing - let user decide
+const ranked = rankTorrents(torrents, audiobook, {
+  indexerPriorities,
+  flagConfigs,
+  requireAuthor: false  // Show everything, including edge cases
+});
+
+return ranked;  // User can see torrents without author info
 ```
 
 ## Tech Stack

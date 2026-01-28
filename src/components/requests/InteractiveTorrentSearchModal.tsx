@@ -187,7 +187,7 @@ export function InteractiveTorrentSearchModal({
           {/* No results */}
           {!isSearching && results.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400">No torrents found</p>
+              <p className="text-gray-500 dark:text-gray-400">No torrents/nzbs found</p>
               <Button onClick={performSearch} variant="outline" className="mt-4">
                 Try Again
               </Button>

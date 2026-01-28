@@ -10,7 +10,6 @@ export interface UserInfo {
   email?: string;
   avatarUrl?: string;
   role?: string;           // 'admin' | 'user'
-  isAdmin?: boolean;       // Deprecated: use role instead
   authProvider?: string;   // 'plex' | 'oidc' | 'local'
 }
 

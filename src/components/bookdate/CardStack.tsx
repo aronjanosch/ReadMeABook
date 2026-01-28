@@ -13,6 +13,7 @@ interface CardStackProps {
   currentIndex: number;
   onSwipe: (action: 'left' | 'right' | 'up', markedAsKnown?: boolean) => void;
   onSwipeComplete: () => void;
+  onShowDetails?: () => void; // Callback to show details modal
 }
 
 export function CardStack({
@@ -20,6 +21,7 @@ export function CardStack({
   currentIndex,
   onSwipe,
   onSwipeComplete,
+  onShowDetails,
 }: CardStackProps) {
   const [isExiting, setIsExiting] = useState(false);
   const [exitDirection, setExitDirection] = useState<'left' | 'right' | 'up' | null>(null);
@@ -139,6 +141,7 @@ export function CardStack({
             <RecommendationCard
               recommendation={card.recommendation}
               onSwipe={handleSwipeStart}
+              onShowDetails={isTopCard ? onShowDetails : undefined}
               stackPosition={card.stackPosition}
               isAnimating={isExiting || isAdvancing}
               isDraggable={isTopCard && !isExiting && !isAdvancing}

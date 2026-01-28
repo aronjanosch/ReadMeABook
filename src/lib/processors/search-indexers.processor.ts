@@ -103,13 +103,13 @@ export async function processSearchIndexers(payload: SearchIndexersPayload): Pro
 
     if (searchResults.length === 0) {
       // No results found - queue for re-search instead of failing
-      logger.warn(`No torrents found for request ${requestId}, marking as awaiting_search`);
+      logger.warn(`No torrents/nzbs found for request ${requestId}, marking as awaiting_search`);
 
       await prisma.request.update({
         where: { id: requestId },
         data: {
           status: 'awaiting_search',
-          errorMessage: 'No torrents found. Will retry automatically.',
+          errorMessage: 'No torrents/nzbs found. Will retry automatically.',
           lastSearchAt: new Date(),
           updatedAt: new Date(),
         },
@@ -117,7 +117,7 @@ export async function processSearchIndexers(payload: SearchIndexersPayload): Pro
 
       return {
         success: false,
-        message: 'No torrents found, queued for re-search',
+        message: 'No torrents/nzbs found, queued for re-search',
         requestId,
       };
     }
@@ -149,11 +149,16 @@ export async function processSearchIndexers(payload: SearchIndexersPayload): Pro
 
     // Rank results with indexer priorities and flag configs
     // Note: rankTorrents now filters out results < 20 MB internally
+    // requireAuthor: true (default) - strict filtering for automatic selection
     const rankedResults = ranker.rankTorrents(searchResults, {
       title: audiobook.title,
       author: audiobook.author,
       durationMinutes,
-    }, indexerPriorities, flagConfigs);
+    }, {
+      indexerPriorities,
+      flagConfigs,
+      requireAuthor: true  // Automatic mode - prevent wrong authors
+    });
 
     // Log filter results
     const postFilterCount = rankedResults.length;

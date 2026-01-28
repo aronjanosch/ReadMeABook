@@ -45,6 +45,7 @@ vi.mock('@/lib/utils/audiobook-matcher', () => ({
 
 vi.mock('@/lib/services/audiobookshelf/api', () => ({
   triggerABSItemMatch: vi.fn(),
+  getABSItem: vi.fn(),
 }));
 
 vi.mock('@/lib/services/thumbnail-cache.service', () => ({
@@ -124,7 +125,7 @@ describe('processPlexRecentlyAddedCheck', () => {
     expect(prismaMock.plexLibrary.update).toHaveBeenCalled();
   });
 
-  it('matches requests and triggers ABS metadata match for audiobookshelf', async () => {
+  it('matches requests without re-triggering ABS metadata match for audiobookshelf', async () => {
     const matcher = await import('@/lib/utils/audiobook-matcher');
     const absApi = await import('@/lib/services/audiobookshelf/api');
 
@@ -150,6 +151,7 @@ describe('processPlexRecentlyAddedCheck', () => {
         externalId: 'abs-item-1',
         title: 'New ABS Item',
         author: 'Author A',
+        asin: 'ASIN-ABS', // Item already has ASIN from ABS
         addedAt: new Date(),
       },
     ]);
@@ -196,7 +198,8 @@ describe('processPlexRecentlyAddedCheck', () => {
         data: expect.objectContaining({ status: 'available' }),
       })
     );
-    expect(absApi.triggerABSItemMatch).toHaveBeenCalledWith('abs-item-1', 'ASIN-ABS');
+    // Should NOT trigger metadata match - items already have metadata from ABS
+    expect(absApi.triggerABSItemMatch).not.toHaveBeenCalled();
   });
 });
 

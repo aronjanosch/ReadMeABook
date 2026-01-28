@@ -23,6 +23,14 @@ export async function GET(request: NextRequest) {
       where: { authProvider: 'local' }
     })) > 0;
 
+    // Check if any local admin users exist (for validation)
+    const hasLocalAdmins = (await prisma.user.count({
+      where: {
+        authProvider: 'local',
+        role: 'admin'
+      }
+    })) > 0;
+
     // Mask sensitive values
     const maskValue = (key: string, value: string | null | undefined) => {
       const sensitiveKeys = ['token', 'api_key', 'password', 'secret'];
@@ -36,6 +44,7 @@ export async function GET(request: NextRequest) {
     const settings = {
       backendMode: configMap.get('system.backend_mode') || 'plex',
       hasLocalUsers,
+      hasLocalAdmins,
       audibleRegion: configMap.get('audible.region') || 'us',
       plex: {
         url: configMap.get('plex_url') || '',

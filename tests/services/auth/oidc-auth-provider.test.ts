@@ -256,7 +256,7 @@ describe('OIDCAuthProvider', () => {
     const result = await provider.handleCallback({ code: 'code', state: 'state-1' });
 
     expect(result.success).toBe(true);
-    expect(result.user?.isAdmin).toBe(true);
+    expect(result.user?.role).toBe('admin');
     expect(schedulerMock.triggerJobNow).toHaveBeenCalled();
   });
 
@@ -300,7 +300,7 @@ describe('OIDCAuthProvider', () => {
 
     const { OIDCAuthProvider } = await import('@/lib/services/auth/OIDCAuthProvider');
     const provider = new OIDCAuthProvider();
-    const result = await provider.validateAccess({ id: 'user-3', username: 'user', isAdmin: false, authProvider: 'oidc' });
+    const result = await provider.validateAccess({ id: 'user-3', username: 'user', role: 'user', authProvider: 'oidc' });
 
     expect(result).toBe(false);
   });
@@ -314,7 +314,7 @@ describe('OIDCAuthProvider', () => {
 
     const { OIDCAuthProvider } = await import('@/lib/services/auth/OIDCAuthProvider');
     const provider = new OIDCAuthProvider();
-    const result = await provider.validateAccess({ id: 'user-4', username: 'user', isAdmin: false, authProvider: 'oidc' });
+    const result = await provider.validateAccess({ id: 'user-4', username: 'user', role: 'user', authProvider: 'oidc' });
 
     expect(result).toBe(true);
   });
@@ -324,7 +324,7 @@ describe('OIDCAuthProvider', () => {
 
     const { OIDCAuthProvider } = await import('@/lib/services/auth/OIDCAuthProvider');
     const provider = new OIDCAuthProvider();
-    const result = await provider.validateAccess({ id: 'user-5', username: 'user', isAdmin: false, authProvider: 'oidc' });
+    const result = await provider.validateAccess({ id: 'user-5', username: 'user', role: 'user', authProvider: 'oidc' });
 
     expect(result).toBe(false);
   });

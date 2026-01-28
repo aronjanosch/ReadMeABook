@@ -406,10 +406,12 @@ export class SABnzbdService {
   }
 
   /**
-   * Delete NZB download
+   * Delete NZB download from queue
    */
   async deleteNZB(nzbId: string, deleteFiles: boolean = false): Promise<void> {
-    await this.client.get('/api', {
+    logger.info(`Deleting NZB from queue: ${nzbId} (del_files: ${deleteFiles ? '1' : '0'})`);
+
+    const response = await this.client.get('/api', {
       params: {
         mode: 'queue',
         name: 'delete',
@@ -419,6 +421,59 @@ export class SABnzbdService {
         apikey: this.apiKey,
       },
     });
+
+    logger.info(`SABnzbd queue delete response: ${JSON.stringify(response.data)}`);
+
+    // Check if SABnzbd returned an error
+    if (response.data?.status === false) {
+      throw new Error(response.data.error || `Failed to delete NZB ${nzbId} from queue`);
+    }
+  }
+
+  /**
+   * Archive NZB from history (hides from main view but preserves for troubleshooting)
+   * Note: SABnzbd's default behavior is to archive. Use archive=0 to permanently delete.
+   */
+  async archiveFromHistory(nzbId: string): Promise<void> {
+    logger.info(`Archiving NZB from history: ${nzbId}`);
+
+    const response = await this.client.get('/api', {
+      params: {
+        mode: 'history',
+        name: 'delete',
+        value: nzbId,
+        // No del_files parameter - we'll handle file cleanup manually
+        // No archive parameter - defaults to archive=1 (move to hidden archive, not permanent delete)
+        output: 'json',
+        apikey: this.apiKey,
+      },
+    });
+
+    logger.info(`SABnzbd history archive response: ${JSON.stringify(response.data)}`);
+
+    // Check if SABnzbd returned an error
+    if (response.data?.status === false) {
+      throw new Error(response.data.error || `Failed to archive NZB ${nzbId} from history`);
+    }
+  }
+
+  /**
+   * Archive completed NZB from history after file organization
+   * Note: Only archives from history (not queue). If still in queue, something went wrong.
+   * Archives to SABnzbd's hidden archive (preserves for troubleshooting, doesn't permanently delete)
+   */
+  async archiveCompletedNZB(nzbId: string): Promise<void> {
+    logger.info(`Attempting to archive completed NZB ${nzbId}`);
+
+    try {
+      await this.archiveFromHistory(nzbId);
+      logger.info(`Successfully archived ${nzbId} from history`);
+    } catch (error) {
+      logger.error(`Failed to archive ${nzbId} from history`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new Error(`NZB ${nzbId} not found in history or failed to archive`);
+    }
   }
 
   /**

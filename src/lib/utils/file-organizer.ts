@@ -6,7 +6,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import axios from 'axios';
-import { createJobLogger, JobLogger } from './job-logger';
 import { tagMultipleFiles, checkFfmpegAvailable } from './metadata-tagger';
 import { RMABLogger } from './logger';
 
@@ -73,7 +72,7 @@ export class FileOrganizer {
     loggerConfig?: LoggerConfig
   ): Promise<OrganizationResult> {
     // Create logger if config provided
-    const logger = loggerConfig ? createJobLogger(loggerConfig.jobId, loggerConfig.context) : null;
+    const logger = loggerConfig ? RMABLogger.forJob(loggerConfig.jobId, loggerConfig.context) : null;
 
     const result: OrganizationResult = {
       success: false,

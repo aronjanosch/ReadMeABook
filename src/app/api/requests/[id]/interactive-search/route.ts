@@ -123,16 +123,21 @@ export async function POST(
         return NextResponse.json({
           success: true,
           results: [],
-          message: 'No torrents found',
+          message: 'No torrents/nzbs found',
         });
       }
 
       // Rank torrents using the ranking algorithm with indexer priorities and flag configs
       // Always use the audiobook's title/author for ranking (not custom search query)
+      // requireAuthor: false - interactive mode, show all results for user decision
       const rankedResults = rankTorrents(results, {
         title: requestRecord.audiobook.title,
         author: requestRecord.audiobook.author,
-      }, indexerPriorities, flagConfigs);
+      }, {
+        indexerPriorities,
+        flagConfigs,
+        requireAuthor: false  // Interactive mode - let user decide
+      });
 
       // No threshold filtering for interactive search - show all results
       // User can see scores and make their own decision

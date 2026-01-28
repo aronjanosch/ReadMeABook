@@ -12,6 +12,7 @@ import { useSwipeable } from 'react-swipeable';
 interface RecommendationCardProps {
   recommendation: any;
   onSwipe: (action: 'left' | 'right' | 'up', markedAsKnown?: boolean) => void;
+  onShowDetails?: () => void; // Callback to show details modal
   stackPosition?: number; // 0 = top, 1 = middle, 2 = bottom
   isAnimating?: boolean; // True during exit/advance animations
   isDraggable?: boolean; // False for cards behind the top card
@@ -20,12 +21,14 @@ interface RecommendationCardProps {
 export function RecommendationCard({
   recommendation,
   onSwipe,
+  onShowDetails,
   stackPosition = 0,
   isAnimating = false,
   isDraggable = true,
 }: RecommendationCardProps) {
   const [showToast, setShowToast] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleSwipeRight = () => {
     setShowToast(true);
@@ -41,13 +44,21 @@ export function RecommendationCard({
   };
 
   const swipeHandlers = useSwipeable({
+    onSwipeStart: () => {
+      if (isDraggable && !isAnimating) {
+        setIsDragging(true);
+      }
+    },
     onSwiping: (eventData) => {
       // Only update drag offset if card is draggable and not animating
       if (isDraggable && !isAnimating) {
         setDragOffset({ x: eventData.deltaX, y: eventData.deltaY });
+        setIsDragging(true); // Ensure dragging state is set
       }
     },
     onSwiped: (eventData) => {
+      setIsDragging(false);
+
       // Only process swipe if card is draggable and not animating
       if (!isDraggable || isAnimating) {
         setDragOffset({ x: 0, y: 0 });
@@ -77,11 +88,21 @@ export function RecommendationCard({
       // Reset drag offset
       setDragOffset({ x: 0, y: 0 });
     },
+    // Enable mouse tracking for desktop
     trackMouse: true,
     preventScrollOnSwipe: true,
     // Don't use built-in delta threshold - we'll check manually in onSwiped
     delta: 0,
   });
+
+  // Escape hatch: reset drag state if user clicks elsewhere
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (isDragging && !isAnimating) {
+      // If we're stuck dragging, reset everything
+      setDragOffset({ x: 0, y: 0 });
+      setIsDragging(false);
+    }
+  };
 
   const getOverlayOpacity = (threshold: number, value: number) => {
     return Math.min(Math.abs(value) / threshold, 1);
@@ -107,12 +128,68 @@ export function RecommendationCard({
     <>
       <div
         {...swipeHandlers}
+        onClick={handleCardClick}
         className="relative w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden select-none max-h-[80vh] md:max-h-[85vh] flex flex-col"
         style={{
           transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) rotate(${dragOffset.x * 0.05}deg)`,
           transition: dragOffset.x === 0 && dragOffset.y === 0 ? 'transform 0.3s ease-out' : 'none',
+          cursor: isDraggable ? 'grab' : 'default',
         }}
       >
+        {/* Details button - only show for top card */}
+        {stackPosition === 0 && onShowDetails && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              if (!isAnimating) {
+                // Reset any stuck drag state when clicking the button
+                setDragOffset({ x: 0, y: 0 });
+                setIsDragging(false);
+                onShowDetails();
+              }
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onMouseUp={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              if (!isAnimating) {
+                setDragOffset({ x: 0, y: 0 });
+                setIsDragging(false);
+                onShowDetails();
+              }
+            }}
+            type="button"
+            className="absolute top-4 right-4 z-30 p-2.5 bg-white dark:bg-gray-800 backdrop-blur-sm rounded-full shadow-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-all border-2 border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500 active:scale-95"
+            title="View details"
+            aria-label="View details"
+            style={{ touchAction: 'none', cursor: 'pointer' }}
+          >
+            <svg
+              className="w-5 h-5 text-gray-700 dark:text-gray-300 pointer-events-none"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </button>
+        )}
+
         {/* Drag overlay indicators - show only dominant direction */}
         {dominantDirection === 'right' && (
           <div
@@ -206,21 +283,39 @@ export function RecommendationCard({
         {stackPosition === 0 && (
           <div className="hidden md:flex justify-center gap-4 p-6 border-t border-gray-200 dark:border-gray-700">
             <button
-              onClick={() => !isAnimating && onSwipe('left')}
+              onClick={() => {
+                if (!isAnimating) {
+                  setDragOffset({ x: 0, y: 0 });
+                  setIsDragging(false);
+                  onSwipe('left');
+                }
+              }}
               disabled={isAnimating}
               className="px-6 py-3 bg-red-500 hover:bg-red-600 text-white rounded-full font-medium transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               ❌ Not Interested
             </button>
             <button
-              onClick={() => !isAnimating && onSwipe('up')}
+              onClick={() => {
+                if (!isAnimating) {
+                  setDragOffset({ x: 0, y: 0 });
+                  setIsDragging(false);
+                  onSwipe('up');
+                }
+              }}
               disabled={isAnimating}
               className="px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-full font-medium transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               ⬆️ Dismiss
             </button>
             <button
-              onClick={() => !isAnimating && handleSwipeRight()}
+              onClick={() => {
+                if (!isAnimating) {
+                  setDragOffset({ x: 0, y: 0 });
+                  setIsDragging(false);
+                  handleSwipeRight();
+                }
+              }}
               disabled={isAnimating}
               className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-full font-medium transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >

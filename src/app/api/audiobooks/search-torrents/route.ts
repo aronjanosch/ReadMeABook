@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           results: [],
-          message: 'No torrents found',
+          message: 'No torrents/nzbs found',
         });
       }
 
@@ -138,7 +138,12 @@ export async function POST(request: NextRequest) {
 
       // Rank torrents using the ranking algorithm with indexer priorities and flag configs
       // Note: rankTorrents now filters out results < 20 MB internally
-      const rankedResults = rankTorrents(results, { title, author, durationMinutes }, indexerPriorities, flagConfigs);
+      // requireAuthor: false - interactive search, show all results for user decision
+      const rankedResults = rankTorrents(results, { title, author, durationMinutes }, {
+        indexerPriorities,
+        flagConfigs,
+        requireAuthor: false  // Interactive mode - let user decide
+      });
 
       // Log filter results
       const postFilterCount = rankedResults.length;

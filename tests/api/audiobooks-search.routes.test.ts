@@ -64,7 +64,7 @@ describe('Audiobooks search torrents route', () => {
   it('returns ranked results with rank order', async () => {
     authRequest.json.mockResolvedValue({ title: 'Title', author: 'Author' });
     configServiceMock.get
-      .mockResolvedValueOnce(JSON.stringify([{ id: 1, name: 'Indexer', priority: 10 }]))
+      .mockResolvedValueOnce(JSON.stringify([{ id: 1, name: 'Indexer', protocol: 'torrent', priority: 10 }]))
       .mockResolvedValueOnce(null);
 
     groupIndexersMock.mockReturnValue([{ categories: [1], indexerIds: [1] }]);

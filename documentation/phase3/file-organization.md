@@ -43,9 +43,10 @@ Result: Douglas Adams/Stephen Fry/The Hitchhiker's Guide to the Galaxy/
 5. **Copy** files (not move - originals stay for seeding)
 6. **Tag metadata** (if enabled) - writes correct title, author, narrator, ASIN to audio files
 7. Copy cover art if found, else download from Audible
-8. Update request status to `downloaded`
-9. **Trigger filesystem scan** (if enabled) - tells Plex/ABS to scan for new files
-10. Originals remain until seeding requirements met
+8. **Generate file hash** - SHA256 of sorted audio filenames for library matching (see: [fixes/file-hash-matching.md](../fixes/file-hash-matching.md))
+9. Update request status to `downloaded` and store file hash in `audiobooks.files_hash`
+10. **Trigger filesystem scan** (if enabled) - tells Plex/ABS to scan for new files
+11. Originals remain until seeding requirements met
 
 ## Filesystem Scan Triggering
 

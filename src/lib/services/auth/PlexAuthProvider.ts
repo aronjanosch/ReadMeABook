@@ -239,7 +239,7 @@ export class PlexAuthProvider implements IAuthProvider {
       username: user.plexUsername,
       email: user.plexEmail || undefined,
       avatarUrl: user.avatarUrl || undefined,
-      isAdmin: user.role === 'admin',
+      role: user.role,
       authProvider: 'plex',
     };
   }
@@ -252,7 +252,7 @@ export class PlexAuthProvider implements IAuthProvider {
       sub: userInfo.id,
       plexId: userInfo.id, // For backwards compatibility
       username: userInfo.username,
-      role: userInfo.isAdmin ? 'admin' : 'user',
+      role: userInfo.role || 'user',
     });
 
     const refreshToken = generateRefreshToken(userInfo.id);

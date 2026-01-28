@@ -119,6 +119,53 @@ describe('BookDatePage', () => {
     expect(screen.getByTestId('settings-widget')).toHaveAttribute('data-open', 'true');
   });
 
+  it('loads recommendations after completing onboarding', async () => {
+    localStorage.setItem('accessToken', 'token');
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/bookdate/preferences') {
+        return makeJsonResponse({ onboardingComplete: false });
+      }
+      if (url === '/api/bookdate/recommendations') {
+        return makeJsonResponse({ recommendations: [{ id: 'rec-1' }] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: BookDatePage } = await import('@/app/bookdate/page');
+    render(<BookDatePage />);
+
+    await screen.findByText('Welcome to BookDate!');
+    fireEvent.click(screen.getByRole('button', { name: 'Finish Onboarding' }));
+
+    expect(await screen.findByTestId('card-count')).toHaveTextContent('1');
+  });
+
+  it('loads recommendations when onboarding status check fails', async () => {
+    localStorage.setItem('accessToken', 'token');
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/bookdate/preferences') {
+        return makeJsonResponse({ error: 'fail' }, false);
+      }
+      if (url === '/api/bookdate/recommendations') {
+        return makeJsonResponse({ recommendations: [{ id: 'rec-1' }] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: BookDatePage } = await import('@/app/bookdate/page');
+    render(<BookDatePage />);
+
+    expect(await screen.findByTestId('card-count')).toHaveTextContent('1');
+  });
+
   it('renders an error state when recommendations fetch fails', async () => {
     localStorage.setItem('accessToken', 'token');
 
@@ -145,6 +192,31 @@ describe('BookDatePage', () => {
       const recCalls = fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/bookdate/recommendations'));
       expect(recCalls.length).toBeGreaterThan(1);
     });
+  });
+
+  it('navigates to settings from the error state', async () => {
+    localStorage.setItem('accessToken', 'token');
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/bookdate/preferences') {
+        return makeJsonResponse({ onboardingComplete: true });
+      }
+      if (url === '/api/bookdate/recommendations') {
+        return makeJsonResponse({ error: 'bad' }, false);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: BookDatePage } = await import('@/app/bookdate/page');
+    render(<BookDatePage />);
+
+    await screen.findByText(/Could not load recommendations/);
+    fireEvent.click(screen.getByRole('button', { name: 'Go to Settings' }));
+
+    expect(routerMock.push).toHaveBeenCalledWith('/settings');
   });
 
   it('shows empty state and triggers recommendation generation', async () => {

@@ -67,6 +67,7 @@ export async function processDownloadTorrent(payload: DownloadTorrentPayload): P
         data: {
           requestId,
           indexerName: torrent.indexer,
+          indexerId: torrent.indexerId, // Store indexer ID for configuration lookup
           downloadClient: 'sabnzbd',
           downloadClientId,
           torrentName: torrent.title,
@@ -131,6 +132,7 @@ export async function processDownloadTorrent(payload: DownloadTorrentPayload): P
         data: {
           requestId,
           indexerName: torrent.indexer,
+          indexerId: torrent.indexerId, // Store indexer ID for configuration lookup
           downloadClient: 'qbittorrent',
           downloadClientId,
           torrentName: torrent.title,

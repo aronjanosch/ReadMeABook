@@ -21,6 +21,7 @@ Connectivity to Plex for OAuth, library management, content detection, and autom
 **GET {server_url}/library/sections/{id}/refresh** - Trigger async scan
 **GET {server_url}/library/metadata/{rating_key}** - Item metadata (includes user's personal rating)
 **GET {server_url}/library/sections/{id}/search?title={query}** - Search
+**DELETE {server_url}/library/metadata/{rating_key}** - Delete library item (requires deletion enabled in Plex settings)
 
 Auth: `X-Plex-Token` header
 Response: XML (requires `xml2js` parsing to JSON)
@@ -256,13 +257,40 @@ interface PlexLibrary {
   - testConnection() only used for: testing connections, initial fetching during setup/settings
 - Result: Faster authentication, no unnecessary API calls, consistent architecture
 
+## Library Item Deletion
+
+**Endpoint:** `DELETE /library/metadata/{ratingKey}`
+
+**Use Case:** When admin deletes a request, also delete from Plex library to keep in sync
+
+**Requirements:**
+- Deletion must be enabled: Settings > Server > Library in Plex webui
+- Without this setting enabled, DELETE requests will fail
+
+**Implementation:**
+- `deleteItem(serverUrl, authToken, ratingKey)` - Deletes library item by ratingKey
+- Called during request deletion when backend mode is 'plex'
+- Extracts ratingKey from audiobook.plexGuid (format: `plex://album/{ratingKey}`)
+- Mirrors ABS deletion behavior for consistency
+
+**Error Handling:**
+- 404: Item not found (already deleted) - logged but not thrown
+- Other errors: Logged but deletion continues (prevents blocking request deletion)
+
 ## Availability Checking
 
-1. **DB Population:** Plex scan creates/updates records with `plexGuid` + `availabilityStatus: 'available'`
-2. **Audible Matching:** Refresh job fuzzy matches (85% threshold), sets `availabilityStatus: 'available'` for matches
-3. **API Enrichment:** Discovery APIs use real-time matching (70% threshold) at query time
-4. **UI:** `AudiobookCard` shows "In Your Library" if `isAvailable: true`
+1. **DB Population:** Plex scan creates/updates records with `plexGuid` + ASIN + `availabilityStatus: 'available'`
+2. **Audible Matching:** Real-time ASIN-only matching (100% confidence, exact matches only)
+3. **API Enrichment:** Discovery APIs use real-time ASIN matching at query time
+4. **UI:** `AudiobookCard` shows "In Your Library" if `isAvailable: true` (ASIN exact match)
 5. **Server Validation:** `/api/requests` returns 409 if `availabilityStatus === 'available'`
+
+**Match Priority (ASIN-Only):**
+- ASIN in dedicated field (100% confidence) → Match
+- ASIN in plexGuid (backward compatibility) → Match
+- No ASIN match → Return null (no fuzzy fallback)
+
+**Note:** Fuzzy matching (70% threshold) is preserved in `ranking-algorithm.ts` for Prowlarr torrent selection, but NOT used for library availability checks. This eliminates false positives (e.g., "Foundation" matching "Foundation and Empire").
 
 ## Tech Stack
 

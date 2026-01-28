@@ -223,4 +223,135 @@ describe('Header', () => {
 
     expect(screen.queryByRole('link', { name: 'BookDate' })).not.toBeInTheDocument();
   });
+
+  it('opens change password modal and closes it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ version: 'v.test' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(<Header />, {
+      auth: {
+        user: {
+          id: 'user-4',
+          plexId: 'plex-4',
+          username: 'local-admin',
+          role: 'admin',
+          authProvider: 'local',
+        },
+        isLoading: false,
+      },
+    });
+
+    const userButton = screen.getByText('local-admin').closest('button');
+    expect(userButton).not.toBeNull();
+    await userEvent.click(userButton as HTMLButtonElement);
+
+    const changePasswordButton = await screen.findByText('Change Password');
+    await userEvent.click(changePasswordButton);
+
+    expect(await screen.findByRole('heading', { name: 'Change Password' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Change Password' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('closes the user menu when profile is clicked', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: vi.fn().mockResolvedValue({ version: 'v.test' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(<Header />, {
+      auth: {
+        user: {
+          id: 'user-5',
+          plexId: 'plex-5',
+          username: 'reader',
+          role: 'user',
+          authProvider: 'local',
+        },
+        isLoading: false,
+      },
+    });
+
+    const userButton = screen.getByText('reader').closest('button');
+    expect(userButton).not.toBeNull();
+    await userEvent.click(userButton as HTMLButtonElement);
+
+    const profileLink = await screen.findByRole('link', { name: 'Profile' });
+    await userEvent.click(profileLink);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Logout')).not.toBeInTheDocument();
+    });
+  });
+
+  it('logs errors when Plex login fails', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('login failed'));
+    const errorMock = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const openMock = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(<Header />, { auth: { user: null, isLoading: false } });
+
+    await userEvent.click(screen.getByRole('button', { name: /login with plex/i }));
+
+    await waitFor(() => {
+      expect(errorMock).toHaveBeenCalledWith('Login failed:', expect.any(Error));
+    });
+    expect(openMock).not.toHaveBeenCalled();
+  });
+
+  it('closes the mobile menu when BookDate is selected', async () => {
+    localStorage.setItem('accessToken', 'token');
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo) => {
+      if (input === '/api/version') {
+        return Promise.resolve({
+          json: vi.fn().mockResolvedValue({ version: 'v.test' }),
+        });
+      }
+      if (input === '/api/bookdate/config') {
+        return Promise.resolve({
+          json: vi.fn().mockResolvedValue({
+            config: { isVerified: true, isEnabled: true },
+          }),
+        });
+      }
+      return Promise.resolve({
+        json: vi.fn().mockResolvedValue({}),
+      });
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithProviders(<Header />, {
+      auth: {
+        user: {
+          id: 'user-6',
+          plexId: 'plex-6',
+          username: 'reader',
+          role: 'user',
+        },
+        isLoading: false,
+      },
+    });
+
+    const initialBookDateCount = (await screen.findAllByRole('link', { name: 'BookDate' })).length;
+
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle menu' }));
+
+    const bookDateLinks = await screen.findAllByRole('link', { name: 'BookDate' });
+    expect(bookDateLinks).toHaveLength(initialBookDateCount + 1);
+
+    await userEvent.click(bookDateLinks[bookDateLinks.length - 1]);
+
+    await waitFor(async () => {
+      const remainingLinks = await screen.findAllByRole('link', { name: 'BookDate' });
+      expect(remainingLinks).toHaveLength(initialBookDateCount);
+    });
+  });
 });

@@ -32,6 +32,12 @@ describe('LoginPage', () => {
     resetMockRouter();
     resetMockAuthState();
     localStorage.clear();
+    document.cookie.split(';').forEach((cookie) => {
+      const name = cookie.split('=')[0]?.trim();
+      if (name) {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+      }
+    });
     setMockSearchParams('');
     window.innerWidth = 1024;
     vi.resetModules();
@@ -519,5 +525,121 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     expect(await screen.findByText('Access Denied')).toBeInTheDocument();
+  });
+
+  it('falls back to cookies when mobile auth has no hash', async () => {
+    const setAuthDataMock = vi.fn();
+    setMockAuthState({ setAuthData: setAuthDataMock, isLoading: false });
+    setMockSearchParams('auth=success&redirect=/requests');
+
+    const userData = { id: 'user-10', username: 'cookie-user', role: 'user' };
+    document.cookie = 'accessToken=cookie-access';
+    document.cookie = 'refreshToken=cookie-refresh';
+    document.cookie = `userData=${encodeURIComponent(JSON.stringify(userData))}`;
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/auth/providers') return makeJsonResponse(baseProviders);
+      if (url === '/api/audiobooks/covers') return makeJsonResponse({ success: true, covers: [] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: LoginPage } = await import('@/app/login/page');
+    render(<LoginPage />);
+
+    await waitFor(() => {
+      expect(setAuthDataMock).toHaveBeenCalledWith(userData, 'cookie-access');
+      expect(routerMock.push).toHaveBeenCalledWith('/requests');
+    });
+
+    expect(localStorage.getItem('accessToken')).toBe('cookie-access');
+    expect(localStorage.getItem('refreshToken')).toBe('cookie-refresh');
+  });
+
+  it('shows an error when cookie auth payload is invalid', async () => {
+    const setAuthDataMock = vi.fn();
+    setMockAuthState({ setAuthData: setAuthDataMock, isLoading: false });
+    setMockSearchParams('auth=success');
+    document.cookie = 'accessToken=cookie-access';
+    document.cookie = 'userData=not-json';
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/auth/providers') return makeJsonResponse(baseProviders);
+      if (url === '/api/audiobooks/covers') return makeJsonResponse({ success: true, covers: [] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: LoginPage } = await import('@/app/login/page');
+    render(<LoginPage />);
+
+    expect(await screen.findByText('Login failed. Please try again.')).toBeInTheDocument();
+    expect(setAuthDataMock).not.toHaveBeenCalled();
+  });
+
+  it('shows an error when cookie auth data is missing', async () => {
+    setMockSearchParams('auth=success');
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/auth/providers') return makeJsonResponse(baseProviders);
+      if (url === '/api/audiobooks/covers') return makeJsonResponse({ success: true, covers: [] });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { default: LoginPage } = await import('@/app/login/page');
+    render(<LoginPage />);
+
+    expect(await screen.findByText('Authentication failed. Please try again.')).toBeInTheDocument();
+  });
+
+  it('redirects to Plex OAuth on mobile without opening a popup', async () => {
+    window.innerWidth = 500;
+    const loginMock = vi.fn().mockResolvedValue(undefined);
+    setMockAuthState({ login: loginMock, isLoading: false });
+
+    const fetchMock = vi.fn(async (input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url === '/api/auth/providers') return makeJsonResponse(baseProviders);
+      if (url === '/api/audiobooks/covers') return makeJsonResponse({ success: true, covers: [] });
+      if (url === '/api/auth/plex/login') {
+        return makeJsonResponse({ pinId: 321, authUrl: 'http://plex/mobile' });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+    const openMock = vi.fn();
+    vi.stubGlobal('open', openMock);
+
+    const originalLocation = window.location;
+    delete (window as any).location;
+    (window as any).location = {
+      ...originalLocation,
+      href: 'http://localhost/login',
+      hash: '',
+      pathname: '/login',
+      search: '',
+    };
+
+    const { default: LoginPage } = await import('@/app/login/page');
+    render(<LoginPage />);
+
+    const loginButton = await screen.findByRole('button', { name: 'Login with Plex' });
+    fireEvent.click(loginButton);
+
+    await waitFor(() => {
+      expect(openMock).not.toHaveBeenCalled();
+      expect(loginMock).not.toHaveBeenCalled();
+      expect(window.location.href).toBe('http://plex/mobile');
+    });
+
+    (window as any).location = originalLocation;
   });
 });

@@ -113,7 +113,7 @@ export class LocalAuthProvider implements IAuthProvider {
         id: user.id,
         plexId: user.plexId,
         username: user.plexUsername,
-        isAdmin: user.role === 'admin',
+        role: user.role,
       });
 
       logger.info('Tokens generated, returning user data');
@@ -214,7 +214,7 @@ export class LocalAuthProvider implements IAuthProvider {
         id: user.id,
         plexId: user.plexId,
         username: user.plexUsername,
-        isAdmin: user.role === 'admin',
+        role: user.role,
       });
 
       return {
@@ -245,7 +245,7 @@ export class LocalAuthProvider implements IAuthProvider {
       sub: userInfo.id,
       plexId: userInfo.plexId,
       username: userInfo.username,
-      role: userInfo.isAdmin ? 'admin' : 'user',
+      role: userInfo.role || 'user',
     };
 
     logger.debug('JWT token payload', { tokenPayload });

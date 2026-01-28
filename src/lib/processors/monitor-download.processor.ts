@@ -85,7 +85,7 @@ export async function processMonitorDownload(payload: MonitorDownloadPayload): P
 
       // Convert NZBInfo to progress format
       progress = {
-        percent: nzbInfo.progress,
+        percent: nzbInfo.progress * 100, // Convert 0.0-1.0 to 0-100 (matches qBittorrent format)
         bytesDownloaded: nzbInfo.size * nzbInfo.progress,
         bytesTotal: nzbInfo.size,
         speed: nzbInfo.downloadSpeed,
