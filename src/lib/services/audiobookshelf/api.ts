@@ -5,8 +5,17 @@
 
 import { getConfigService } from '../config.service';
 import { RMABLogger } from '@/lib/utils/logger';
+import { AudibleRegion } from '@/lib/types/audible';
 
 const logger = RMABLogger.create('Audiobookshelf');
+
+/**
+ * Map RMAB Audible region to Audiobookshelf provider value
+ */
+function mapRegionToABSProvider(region: AudibleRegion): string {
+  // US uses 'audible' (audible.com), all others use 'audible.{region}'
+  return region === 'us' ? 'audible' : `audible.${region}`;
+}
 
 interface ABSRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -133,8 +142,13 @@ export async function triggerABSScan(libraryId: string) {
  */
 export async function triggerABSItemMatch(itemId: string, asin?: string) {
   try {
+    // Get configured Audible region to use correct ABS provider
+    const configService = getConfigService();
+    const region = await configService.getAudibleRegion();
+    const provider = mapRegionToABSProvider(region);
+
     const body: any = {
-      provider: 'audible', // Use Audible as the metadata provider
+      provider, // Use region-specific Audible provider (e.g., 'audible.ca' for Canada)
     };
 
     // If we have an ASIN, we can do a direct match with 100% confidence

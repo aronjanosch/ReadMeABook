@@ -218,3 +218,10 @@ interface EnrichedAudibleAudiobook extends AudibleAudiobook {
 - **Fix:** Updated ASIN regex to match both `/pd/` and `/ac/` URL patterns: `/\/(?:pd|ac)\/[^\/]+\/([A-Z0-9]{10})/`
 - **Location:** `src/lib/integrations/audible.service.ts:75, 161, 240`
 - **Affects:** `getPopularAudiobooks()`, `getNewReleases()`, `search()` methods
+
+**Audiobookshelf metadata matching not respecting configured region (2026-01-28)**
+- **Problem:** `triggerABSItemMatch()` hardcoded `'audible'` provider (audible.com) instead of respecting user's configured Audible region
+- **Impact:** Users with non-US regions (CA, UK, AU, IN) had incorrect metadata matching in Audiobookshelf, causing wrong ASINs and poor search results
+- **Fix:** Added `mapRegionToABSProvider()` to convert RMAB region codes to AudiobookShelf provider values. US → `'audible'`, others → `'audible.{region}'` (e.g., `'audible.ca'`, `'audible.uk'`)
+- **Location:** `src/lib/services/audiobookshelf/api.ts:14, 147`
+- **Affects:** All Audiobookshelf metadata matching operations

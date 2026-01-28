@@ -18,6 +18,7 @@ import {
 
 const configServiceMock = vi.hoisted(() => ({
   get: vi.fn(),
+  getAudibleRegion: vi.fn(),
 }));
 
 const fetchMock = vi.hoisted(() => vi.fn());
@@ -139,12 +140,13 @@ describe('Audiobookshelf API client', () => {
     }));
   });
 
-  it('includes ASIN overrides in metadata match requests', async () => {
+  it('includes ASIN overrides in metadata match requests with US region', async () => {
     configServiceMock.get.mockImplementation(async (key: string) => {
       if (key === 'audiobookshelf.server_url') return 'http://abs';
       if (key === 'audiobookshelf.api_token') return 'token';
       return null;
     });
+    configServiceMock.getAudibleRegion.mockResolvedValue('us');
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({}),
@@ -154,8 +156,94 @@ describe('Audiobookshelf API client', () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toEqual({
-      provider: 'audible',
+      provider: 'audible', // US uses 'audible'
       asin: 'ASIN123',
+      overrideDefaults: true,
+    });
+  });
+
+  it('uses region-specific provider for Canada', async () => {
+    configServiceMock.get.mockImplementation(async (key: string) => {
+      if (key === 'audiobookshelf.server_url') return 'http://abs';
+      if (key === 'audiobookshelf.api_token') return 'token';
+      return null;
+    });
+    configServiceMock.getAudibleRegion.mockResolvedValue('ca');
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    await triggerABSItemMatch('item-1', 'ASIN123');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toEqual({
+      provider: 'audible.ca',
+      asin: 'ASIN123',
+      overrideDefaults: true,
+    });
+  });
+
+  it('uses region-specific provider for UK', async () => {
+    configServiceMock.get.mockImplementation(async (key: string) => {
+      if (key === 'audiobookshelf.server_url') return 'http://abs';
+      if (key === 'audiobookshelf.api_token') return 'token';
+      return null;
+    });
+    configServiceMock.getAudibleRegion.mockResolvedValue('uk');
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    await triggerABSItemMatch('item-1');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toEqual({
+      provider: 'audible.uk',
+    });
+  });
+
+  it('uses region-specific provider for Australia', async () => {
+    configServiceMock.get.mockImplementation(async (key: string) => {
+      if (key === 'audiobookshelf.server_url') return 'http://abs';
+      if (key === 'audiobookshelf.api_token') return 'token';
+      return null;
+    });
+    configServiceMock.getAudibleRegion.mockResolvedValue('au');
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    await triggerABSItemMatch('item-1', 'ASIN456');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toEqual({
+      provider: 'audible.au',
+      asin: 'ASIN456',
+      overrideDefaults: true,
+    });
+  });
+
+  it('uses region-specific provider for India', async () => {
+    configServiceMock.get.mockImplementation(async (key: string) => {
+      if (key === 'audiobookshelf.server_url') return 'http://abs';
+      if (key === 'audiobookshelf.api_token') return 'token';
+      return null;
+    });
+    configServiceMock.getAudibleRegion.mockResolvedValue('in');
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+
+    await triggerABSItemMatch('item-1', 'ASIN789');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).toEqual({
+      provider: 'audible.in',
+      asin: 'ASIN789',
       overrideDefaults: true,
     });
   });
@@ -166,6 +254,7 @@ describe('Audiobookshelf API client', () => {
       if (key === 'audiobookshelf.api_token') return 'token';
       return null;
     });
+    configServiceMock.getAudibleRegion.mockResolvedValue('us');
     fetchMock.mockResolvedValue({
       ok: false,
       status: 500,
