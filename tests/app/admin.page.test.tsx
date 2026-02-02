@@ -14,6 +14,20 @@ const authenticatedFetcherMock = vi.hoisted(() => vi.fn());
 const fetchJSONMock = vi.hoisted(() => vi.fn());
 const mutateMock = vi.hoisted(() => vi.fn());
 
+// Mock next/navigation for RecentRequestsTable component
+const mockRouter = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  back: vi.fn(),
+}));
+const mockSearchParams = vi.hoisted(() => new URLSearchParams());
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => mockRouter,
+  usePathname: () => '/admin',
+  useSearchParams: () => mockSearchParams,
+}));
+
 const toastMock = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
@@ -52,6 +66,8 @@ describe('AdminDashboard', () => {
     mutateMock.mockReset();
     toastMock.success.mockReset();
     toastMock.error.mockReset();
+    mockRouter.push.mockReset();
+    mockRouter.replace.mockReset();
   });
 
   it('renders metrics, downloads, and recent requests', async () => {
@@ -81,7 +97,8 @@ describe('AdminDashboard', () => {
         ],
       },
     });
-    swrState.set('/api/admin/requests/recent', {
+    // RecentRequestsTable fetches from /api/admin/requests with query params
+    swrState.set('/api/admin/requests?page=1&pageSize=25&search=&status=all&userId=&sortBy=createdAt&sortOrder=desc', {
       data: {
         requests: [
           {
@@ -89,14 +106,20 @@ describe('AdminDashboard', () => {
             title: 'Recent Book',
             author: 'Author Two',
             status: 'pending',
+            userId: 'user-1',
             user: 'Sam',
             createdAt: new Date('2024-01-02T00:00:00Z'),
             completedAt: null,
             errorMessage: null,
           },
         ],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
       },
     });
+    swrState.set('/api/admin/users', { data: { users: [] } });
     swrState.set('/api/admin/requests/pending-approval', { data: { requests: [] } });
     swrState.set('/api/admin/settings', { data: { ebook: { enabled: false } } });
 
@@ -120,7 +143,11 @@ describe('AdminDashboard', () => {
       },
     });
     swrState.set('/api/admin/downloads/active', { data: { downloads: [] } });
-    swrState.set('/api/admin/requests/recent', { data: { requests: [] } });
+    // RecentRequestsTable fetches from /api/admin/requests with query params
+    swrState.set('/api/admin/requests?page=1&pageSize=25&search=&status=all&userId=&sortBy=createdAt&sortOrder=desc', {
+      data: { requests: [], total: 0, page: 1, pageSize: 25, totalPages: 0 },
+    });
+    swrState.set('/api/admin/users', { data: { users: [] } });
     swrState.set('/api/admin/settings', { data: { ebook: { enabled: false } } });
     swrState.set('/api/admin/requests/pending-approval', {
       data: {
