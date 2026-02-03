@@ -77,12 +77,16 @@ export async function PUT(
           }
         }
 
-        // Test connection if credentials/URL changed
+        // Test connection if credentials/URL changed (skip if disabling client)
+        const isDisabling = enabled === false;
         if (
-          url !== undefined ||
-          username !== undefined ||
-          (password && password !== '********') ||
-          disableSSLVerify !== undefined
+          !isDisabling &&
+          (
+            url !== undefined ||
+            username !== undefined ||
+            (password && password !== '********') ||
+            disableSSLVerify !== undefined
+          )
         ) {
           const testResult = await manager.testConnection(updatedClient);
           if (!testResult.success) {

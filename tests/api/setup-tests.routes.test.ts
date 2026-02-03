@@ -163,15 +163,15 @@ describe('Setup test routes', () => {
     expect(payload.error).toMatch(/Invalid client type/);
   });
 
-  it('rejects missing qBittorrent credentials', async () => {
+  it('rejects missing SABnzbd API key', async () => {
     const { POST } = await import('@/app/api/setup/test-download-client/route');
     const response = await POST({
-      json: vi.fn().mockResolvedValue({ type: 'qbittorrent', url: 'http://qbt' }),
+      json: vi.fn().mockResolvedValue({ type: 'sabnzbd', url: 'http://sab' }),
     } as any);
     const payload = await response.json();
 
     expect(response.status).toBe(400);
-    expect(payload.error).toMatch(/Username and password/);
+    expect(payload.error).toMatch(/API key/);
   });
 
   it('tests SABnzbd connection', async () => {

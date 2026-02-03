@@ -184,7 +184,7 @@ export class DownloadClientManager {
     return new QBittorrentService(
       config.url,
       config.username || '',
-      config.password,
+      config.password || '', // Optional for IP whitelist auth
       '/downloads', // defaultSavePath
       config.category || 'readmeabook', // defaultCategory
       config.disableSSLVerify,

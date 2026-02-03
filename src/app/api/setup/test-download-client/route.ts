@@ -29,19 +29,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate required fields per client type
+    // qBittorrent credentials are optional (supports IP whitelist auth)
     if (type === 'qbittorrent') {
-      if (!username || !password) {
-        return NextResponse.json(
-          { success: false, error: 'Username and password are required for qBittorrent' },
-          { status: 400 }
-        );
-      }
-
-      // Test qBittorrent connection
+      // Test qBittorrent connection (empty credentials work with IP whitelist)
       const version = await QBittorrentService.testConnectionWithCredentials(
         url,
-        username,
-        password,
+        username || '',
+        password || '',
         disableSSLVerify || false
       );
 

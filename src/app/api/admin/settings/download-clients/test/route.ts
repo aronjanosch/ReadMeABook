@@ -66,29 +66,32 @@ export async function POST(request: NextRequest) {
         }
 
         // Validate required fields
-        if (!url || !effectivePassword) {
+        // URL is always required; password/API key only required for SABnzbd
+        // qBittorrent supports IP whitelist auth (no credentials needed)
+        if (!url) {
           return NextResponse.json(
-            { error: 'URL and password/API key are required' },
+            { error: 'URL is required' },
             { status: 400 }
           );
         }
 
-        if (type === 'qbittorrent' && !effectiveUsername) {
+        if (type === 'sabnzbd' && !effectivePassword) {
           return NextResponse.json(
-            { error: 'Username is required for qBittorrent' },
+            { error: 'API key is required for SABnzbd' },
             { status: 400 }
           );
         }
 
         // Create temporary client config for testing
+        // qBittorrent credentials are optional (supports IP whitelist auth)
         const testConfig: DownloadClientConfig = {
           id: 'test',
           type,
           name: 'Test Client',
           enabled: true,
           url,
-          username: effectiveUsername || undefined,
-          password: effectivePassword,
+          username: effectiveUsername || '',
+          password: effectivePassword || '',
           disableSSLVerify: disableSSLVerify || false,
           remotePathMappingEnabled: remotePathMappingEnabled || false,
           remotePath: remotePath || undefined,

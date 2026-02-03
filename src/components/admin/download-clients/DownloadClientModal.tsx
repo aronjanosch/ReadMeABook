@@ -108,12 +108,9 @@ export function DownloadClientModal({
       newErrors.url = 'URL is required';
     }
 
-    if (type === 'qbittorrent' && !username.trim()) {
-      newErrors.username = 'Username is required for qBittorrent';
-    }
-
-    if (!password.trim() || (mode === 'add' && password === '********')) {
-      newErrors.password = type === 'qbittorrent' ? 'Password is required' : 'API key is required';
+    // SABnzbd always requires API key; qBittorrent credentials are optional (supports IP whitelist auth)
+    if (type === 'sabnzbd' && (!password.trim() || (mode === 'add' && password === '********'))) {
+      newErrors.password = 'API key is required';
     }
 
     if (remotePathMappingEnabled) {
@@ -196,7 +193,8 @@ export function DownloadClientModal({
       return;
     }
 
-    if (!testResult?.success) {
+    // Skip connection test requirement when disabling the client
+    if (!testResult?.success && enabled) {
       setErrors({ ...errors, test: 'Please test the connection before saving' });
       return;
     }
@@ -439,7 +437,7 @@ export function DownloadClientModal({
             </Button>
             <Button
               onClick={handleSave}
-              disabled={saving || !testResult?.success}
+              disabled={saving || (!testResult?.success && enabled)}
             >
               {saving ? 'Saving...' : mode === 'add' ? 'Add Client' : 'Save Changes'}
             </Button>

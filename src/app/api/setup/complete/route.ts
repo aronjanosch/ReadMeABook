@@ -107,16 +107,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate each client has required fields
+    // qBittorrent credentials are optional (supports IP whitelist auth)
+    // SABnzbd always requires API key
     for (const client of clients) {
-      if (!client.url || !client.password) {
+      if (!client.url) {
         return NextResponse.json(
-          { success: false, error: 'Download client URL and password/API key are required' },
+          { success: false, error: 'Download client URL is required' },
           { status: 400 }
         );
       }
-      if (client.type === 'qbittorrent' && !client.username) {
+      if (client.type === 'sabnzbd' && !client.password) {
         return NextResponse.json(
-          { success: false, error: 'qBittorrent username is required' },
+          { success: false, error: 'SABnzbd API key is required' },
           { status: 400 }
         );
       }
