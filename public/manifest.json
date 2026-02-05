@@ -8,15 +8,10 @@
   "theme_color": "#1e3a5f",
   "icons": [
     {
-      "src": "/RMAB_1024x1024_ICON.png",
+      "src": "/RMAB_1024x1024_APPICON.png",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any maskable"
-    },
-    {
-      "src": "/rmab_32x32.png",
-      "sizes": "32x32",
-      "type": "image/png"
     }
   ]
 }

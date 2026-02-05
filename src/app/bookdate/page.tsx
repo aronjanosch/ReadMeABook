@@ -414,6 +414,7 @@ export default function BookDatePage() {
             requestStatus={currentRec.requestStatus}
             isAvailable={currentRec.isAvailable}
             requestedByUsername={currentRec.requestedByUsername}
+            hideRequestActions
           />
         ) : null;
       })()}

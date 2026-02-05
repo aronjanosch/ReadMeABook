@@ -1,6 +1,9 @@
 /**
  * Component: Audiobook Details Modal
  * Documentation: documentation/frontend/components.md
+ *
+ * Premium modal design with mobile-first sticky actions
+ * Matches the Apple-inspired card aesthetic
  */
 
 'use client';
@@ -8,11 +11,10 @@
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { createPortal } from 'react-dom';
-import { Button } from '@/components/ui/Button';
-import { StatusBadge } from '@/components/requests/StatusBadge';
 import { useAudiobookDetails } from '@/lib/hooks/useAudiobooks';
 import { useCreateRequest, useEbookStatus, useFetchEbookByAsin } from '@/lib/hooks/useRequests';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePreferences } from '@/contexts/PreferencesContext';
 import { InteractiveTorrentSearchModal } from '@/components/requests/InteractiveTorrentSearchModal';
 
 interface AudiobookDetailsModalProps {
@@ -24,7 +26,34 @@ interface AudiobookDetailsModalProps {
   requestStatus?: string | null;
   isAvailable?: boolean;
   requestedByUsername?: string | null;
+  hideRequestActions?: boolean;
 }
+
+// Status helper
+const getStatusInfo = (isAvailable: boolean, requestStatus: string | null, requestedByUsername: string | null) => {
+  if (isAvailable || requestStatus === 'completed') {
+    return { type: 'available', label: 'In Your Library', canRequest: false };
+  }
+
+  const processingStatuses = ['downloading', 'processing', 'downloaded', 'awaiting_import'];
+  if (requestStatus && processingStatuses.includes(requestStatus)) {
+    return { type: 'processing', label: 'Processing', canRequest: false };
+  }
+
+  const pendingStatuses = ['pending', 'awaiting_search', 'searching', 'awaiting_approval'];
+  if (requestStatus && pendingStatuses.includes(requestStatus)) {
+    const label = requestStatus === 'awaiting_approval'
+      ? requestedByUsername ? `Pending Approval (${requestedByUsername})` : 'Pending Approval'
+      : requestedByUsername ? `Requested by ${requestedByUsername}` : 'Requested';
+    return { type: 'pending', label, canRequest: false };
+  }
+
+  if (requestStatus === 'denied') {
+    return { type: 'denied', label: 'Request Denied', canRequest: true };
+  }
+
+  return { type: 'none', label: '', canRequest: true };
+};
 
 export function AudiobookDetailsModal({
   asin,
@@ -35,24 +64,25 @@ export function AudiobookDetailsModal({
   requestStatus = null,
   isAvailable = false,
   requestedByUsername = null,
+  hideRequestActions = false,
 }: AudiobookDetailsModalProps) {
   const { user } = useAuth();
+  const { squareCovers } = usePreferences();
   const { audiobook, isLoading, error } = useAudiobookDetails(isOpen ? asin : null);
   const { createRequest, isLoading: isRequesting } = useCreateRequest();
   const { ebookStatus, revalidate: revalidateEbookStatus } = useEbookStatus(isOpen && isAvailable ? asin : null);
   const { fetchEbook, isLoading: isFetchingEbook } = useFetchEbookByAsin();
+
   const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('Request created successfully!');
-  const [requestError, setRequestError] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [mounted, setMounted] = useState(false);
   const [showInteractiveSearch, setShowInteractiveSearch] = useState(false);
   const [showInteractiveSearchEbook, setShowInteractiveSearchEbook] = useState(false);
   const [asinCopied, setAsinCopied] = useState(false);
 
-  // Determine if ebook buttons should be shown
-  const canShowEbookButtons = isAvailable &&
-    ebookStatus?.ebookSourcesEnabled &&
-    !ebookStatus?.hasActiveEbookRequest;
+  const status = getStatusInfo(isAvailable, requestStatus, requestedByUsername);
+  const canShowEbookButtons = isAvailable && ebookStatus?.ebookSourcesEnabled && !ebookStatus?.hasActiveEbookRequest;
 
   useEffect(() => {
     setMounted(true);
@@ -69,115 +99,49 @@ export function AudiobookDetailsModal({
     };
   }, [isOpen]);
 
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
+  };
+
   const handleRequest = async () => {
     if (!user || !audiobook) {
-      setRequestError('Please log in to request audiobooks');
+      showNotification('Please log in to request audiobooks', 'error');
       return;
     }
 
     try {
       await createRequest(audiobook);
-      setToastMessage('Request created successfully!');
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-        onClose();
-      }, 2000);
+      showNotification('Request created!');
+      setTimeout(onClose, 1500);
       onRequestSuccess?.();
     } catch (err) {
-      setRequestError(err instanceof Error ? err.message : 'Failed to create request');
-      setTimeout(() => setRequestError(null), 5000);
+      showNotification(err instanceof Error ? err.message : 'Failed to create request', 'error');
     }
   };
 
   const handleInteractiveSearch = () => {
     if (!user || !audiobook) {
-      setRequestError('Please log in to request audiobooks');
+      showNotification('Please log in to request audiobooks', 'error');
       return;
     }
-
-    // Just show the interactive search modal - no request created yet
     setShowInteractiveSearch(true);
-  };
-
-  const handleInteractiveSearchClose = () => {
-    // Clean up state
-    setShowInteractiveSearch(false);
-
-    // Close the details modal too
-    onClose();
-  };
-
-  const handleInteractiveSearchSuccess = () => {
-    // Request was created and torrent was selected successfully
-    onRequestSuccess?.();
   };
 
   const handleFetchEbook = async () => {
     if (!user) {
-      setRequestError('Please log in to request ebooks');
+      showNotification('Please log in to request ebooks', 'error');
       return;
     }
 
     try {
       const result = await fetchEbook(asin);
       revalidateEbookStatus();
-
-      if (result.needsApproval) {
-        setToastMessage('Ebook request submitted for approval!');
-      } else {
-        setToastMessage('Ebook search started!');
-      }
-      setShowToast(true);
-      setTimeout(() => {
-        setShowToast(false);
-      }, 3000);
+      showNotification(result.needsApproval ? 'Ebook request submitted for approval!' : 'Ebook search started!');
     } catch (err) {
-      setRequestError(err instanceof Error ? err.message : 'Failed to request ebook');
-      setTimeout(() => setRequestError(null), 5000);
-    }
-  };
-
-  const handleInteractiveSearchEbook = () => {
-    if (!user) {
-      setRequestError('Please log in to request ebooks');
-      return;
-    }
-    setShowInteractiveSearchEbook(true);
-  };
-
-  const handleInteractiveSearchEbookClose = () => {
-    setShowInteractiveSearchEbook(false);
-    revalidateEbookStatus();
-  };
-
-  const handleInteractiveSearchEbookSuccess = () => {
-    revalidateEbookStatus();
-    setToastMessage('Ebook download started!');
-    setShowToast(true);
-    setTimeout(() => {
-      setShowToast(false);
-    }, 3000);
-  };
-
-  const formatDuration = (minutes?: number) => {
-    if (!minutes) return null;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours} hr ${mins} min`;
-  };
-
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return null;
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
+      showNotification(err instanceof Error ? err.message : 'Failed to request ebook', 'error');
     }
   };
 
@@ -191,203 +155,229 @@ export function AudiobookDetailsModal({
     }
   };
 
+  const formatDuration = (minutes?: number) => {
+    if (!minutes) return null;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h ${mins}m`;
+  };
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return null;
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return dateString;
+    }
+  };
+
   if (!isOpen || !mounted) return null;
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      style={{ height: '100dvh' }}
       onClick={onClose}
     >
+      {/* Modal Container - uses dvh for PWA support */}
       <div
-        className="relative w-full max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-lg shadow-2xl"
+        className="relative w-full sm:max-w-2xl lg:max-w-3xl bg-white dark:bg-gray-900 sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-300"
+        style={{
+          maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px))',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close Button */}
+        {/* Mobile: Sticky Header with Close */}
+        <div className="sticky top-0 z-20 flex items-center justify-between px-4 py-3 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-700/50 sm:hidden">
+          <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Audiobook Details</span>
+          <button
+            onClick={onClose}
+            className="p-2 -mr-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Desktop: Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-2 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-          aria-label="Close modal"
+          className="hidden sm:flex absolute top-4 right-4 z-20 p-2 rounded-full bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-sm hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          aria-label="Close"
         >
-          <svg
-            className="w-6 h-6 text-gray-600 dark:text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
+          <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
 
-        {/* Loading State */}
-        {isLoading && (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        )}
-
-        {/* Error State */}
-        {error && !isLoading && (
-          <div className="p-8">
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
-              <p className="text-red-800 dark:text-red-200 font-medium">
-                Failed to load audiobook details
-              </p>
-              <p className="text-red-700 dark:text-red-300 text-sm mt-2">
-                Please try again later
-              </p>
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          {/* Loading State */}
+          {isLoading && (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Content */}
-        {audiobook && !isLoading && (
-          <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
-            {/* Header Section */}
-            <div className="flex flex-col md:flex-row gap-4 sm:gap-6">
-              {/* Cover Art */}
-              <div className="flex-shrink-0 mx-auto md:mx-0">
-                <div className="relative w-32 sm:w-40 md:w-48 aspect-[2/3] bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden shadow-lg">
-                  {audiobook.coverArtUrl ? (
-                    <Image
-                      src={audiobook.coverArtUrl}
-                      alt={`Cover art for ${audiobook.title}`}
-                      fill
-                      className="object-cover"
-                      sizes="192px"
-                      priority
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-400">
-                      <svg
-                        className="w-16 h-16"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
-                        />
-                      </svg>
+          {/* Error State */}
+          {error && !isLoading && (
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <p className="text-gray-900 dark:text-gray-100 font-medium">Failed to load details</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Please try again later</p>
+            </div>
+          )}
+
+          {/* Content */}
+          {audiobook && !isLoading && (
+            <div className="p-4 sm:p-6 lg:p-8">
+              {/* Hero Section - Cover + Title/Author */}
+              <div className="flex flex-col sm:flex-row gap-5 sm:gap-6">
+                {/* Cover Art */}
+                <div className="flex-shrink-0 mx-auto sm:mx-0">
+                  <div className={`
+                    relative overflow-hidden rounded-2xl shadow-xl shadow-black/20 dark:shadow-black/40
+                    ${squareCovers ? 'w-40 sm:w-44 lg:w-52 aspect-square' : 'w-32 sm:w-40 lg:w-48 aspect-[2/3]'}
+                    ${status.type === 'available' ? 'ring-2 ring-emerald-400/60' : ''}
+                  `}>
+                    {audiobook.coverArtUrl ? (
+                      <Image
+                        src={audiobook.coverArtUrl}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes="200px"
+                        priority
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
+                        <svg className="w-12 h-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                        </svg>
+                      </div>
+                    )}
+
+                    {/* Rating Badge */}
+                    {audiobook.rating && audiobook.rating > 0 && (
+                      <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-sm text-white text-xs font-medium">
+                        <svg className="w-3.5 h-3.5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        <span>{audiobook.rating.toFixed(1)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Title & Author */}
+                <div className="flex-1 text-center sm:text-left min-w-0">
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-gray-100 leading-tight">
+                    {audiobook.title}
+                  </h2>
+                  <p className="mt-2 text-base sm:text-lg text-gray-600 dark:text-gray-300">
+                    {audiobook.author}
+                  </p>
+                  {audiobook.narrator && (
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      Narrated by {audiobook.narrator}
+                    </p>
+                  )}
+
+                  {/* Status Badge */}
+                  {status.type !== 'none' && (
+                    <div className="mt-4 inline-flex">
+                      <span className={`
+                        inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium
+                        ${status.type === 'available' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : ''}
+                        ${status.type === 'processing' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' : ''}
+                        ${status.type === 'pending' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : ''}
+                        ${status.type === 'denied' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : ''}
+                      `}>
+                        {status.type === 'available' && (
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        {status.type === 'processing' && (
+                          <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        )}
+                        {status.label}
+                      </span>
                     </div>
                   )}
+
+                  {/* Quick Metadata */}
+                  <div className="mt-4 flex flex-wrap items-center justify-center sm:justify-start gap-3 text-sm text-gray-500 dark:text-gray-400">
+                    {audiobook.durationMinutes && (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {formatDuration(audiobook.durationMinutes)}
+                      </span>
+                    )}
+                    {audiobook.releaseDate && (
+                      <span>{formatDate(audiobook.releaseDate)}</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Metadata */}
-              <div className="flex-1 space-y-3 sm:space-y-4 text-center md:text-left">
-                {/* Title */}
-                <div>
-                  <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">
-                    {audiobook.title}
-                  </h2>
+              {/* Genres */}
+              {audiobook.genres && audiobook.genres.length > 0 && (
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {audiobook.genres.map((genre: string) => (
+                    <span
+                      key={genre}
+                      className="px-3 py-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm rounded-full"
+                    >
+                      {genre}
+                    </span>
+                  ))}
                 </div>
+              )}
 
-                {/* Author */}
-                <div className="space-y-1">
-                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">By</p>
-                  <p className="text-base sm:text-lg text-gray-700 dark:text-gray-300 font-medium">
-                    {audiobook.author}
+              {/* Description */}
+              {audiobook.description && (
+                <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700/50">
+                  <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                    Summary
+                  </h3>
+                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap text-[15px]">
+                    {audiobook.description}
                   </p>
                 </div>
+              )}
 
-                {/* Narrator */}
-                {audiobook.narrator && (
-                  <div className="space-y-1">
-                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Narrated by</p>
-                    <p className="text-base sm:text-lg text-gray-700 dark:text-gray-300">
-                      {audiobook.narrator}
-                    </p>
-                  </div>
-                )}
-
-                {/* Metadata Grid */}
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  {/* Rating - Always show header, display 'Not Found' if no rating */}
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Rating</p>
-                    {audiobook.rating && audiobook.rating > 0 ? (
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          {[...Array(5)].map((_, i) => (
-                            <svg
-                              key={i}
-                              className={`w-5 h-5 ${
-                                i < Math.floor(Number(audiobook.rating))
-                                  ? 'text-yellow-400 fill-current'
-                                  : 'text-gray-300 dark:text-gray-600'
-                              }`}
-                              viewBox="0 0 20 20"
-                            >
-                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                            </svg>
-                          ))}
-                        </div>
-                        <span className="text-gray-700 dark:text-gray-300 font-medium">
-                          {Number(audiobook.rating).toFixed(1)}
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="text-gray-500 dark:text-gray-400 italic">Not Found</p>
-                    )}
-                  </div>
-
-                  {/* Duration */}
-                  {audiobook.durationMinutes && (
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Length</p>
-                      <p className="text-gray-700 dark:text-gray-300 font-medium">
-                        {formatDuration(audiobook.durationMinutes)}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Release Date */}
-                  {audiobook.releaseDate && (
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Release Date</p>
-                      <p className="text-gray-700 dark:text-gray-300">
-                        {formatDate(audiobook.releaseDate)}
-                      </p>
-                    </div>
-                  )}
-
+              {/* Details Grid */}
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700/50">
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
+                  Details
+                </h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   {/* ASIN */}
                   <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">ASIN</p>
+                    <p className="text-gray-500 dark:text-gray-400">ASIN</p>
                     <button
                       onClick={handleCopyAsin}
-                      className="group flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                      title="Click to copy ASIN"
+                      className="flex items-center gap-1.5 font-mono text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                     >
-                      <span className="font-mono text-sm">{asin}</span>
-                      <svg
-                        className="w-4 h-4 flex-shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
+                      {asin}
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         {asinCopied ? (
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 13l4 4L19 7"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         ) : (
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                          />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         )}
                       </svg>
                     </button>
@@ -395,328 +385,158 @@ export function AudiobookDetailsModal({
 
                   {/* Audible Link */}
                   <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">View Details</p>
+                    <p className="text-gray-500 dark:text-gray-400">Source</p>
                     <a
                       href={`https://www.audible.com/pd/${asin}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 hover:underline transition-colors font-medium"
-                      title="View on Audible"
+                      className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400 hover:underline"
                     >
-                      <span>Audible.com</span>
-                      <svg
-                        className="w-4 h-4 flex-shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                        />
+                      Audible
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
                     </a>
                   </div>
-
-                  {/* Availability Status */}
-                  {isAvailable && (
-                    <div>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Status</p>
-                      <div className="inline-flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-sm font-semibold px-3 py-1 rounded-full">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path
-                            fillRule="evenodd"
-                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        <span>In Your Library</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
+              </div>
 
-                {/* Genres */}
-                {audiobook.genres && audiobook.genres.length > 0 && (
-                  <div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">Genres</p>
-                    <div className="flex flex-wrap gap-2">
-                      {audiobook.genres.map((genre: string) => (
-                        <span
-                          key={genre}
-                          className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-sm rounded-full"
-                        >
-                          {genre}
-                        </span>
-                      ))}
-                    </div>
+              {/* Ebook Status */}
+              {ebookStatus?.hasActiveEbookRequest && (
+                <div className="mt-4 p-3 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/50">
+                  <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 text-sm">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <span>
+                      Ebook: {ebookStatus.existingEbookStatus === 'awaiting_approval'
+                        ? 'Pending Approval'
+                        : ebookStatus.existingEbookStatus === 'available' || ebookStatus.existingEbookStatus === 'downloaded'
+                          ? 'Available'
+                          : 'In Progress'}
+                    </span>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Sticky Action Bar - hidden when opened from bookdate */}
+        {audiobook && !isLoading && !hideRequestActions && (
+          <div
+            className="sticky bottom-0 z-20 p-4 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-t border-gray-200/50 dark:border-gray-700/50"
+            style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
+          >
+            <div className="flex items-center gap-3">
+              {/* Main Action */}
+              <div className="flex-1">
+                {status.type === 'available' ? (
+                  <button
+                    disabled
+                    className="w-full py-3 px-4 rounded-xl font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/30"
+                  >
+                    In Your Library
+                  </button>
+                ) : status.canRequest ? (
+                  <button
+                    onClick={handleRequest}
+                    disabled={isRequesting || !user}
+                    className="w-full py-3 px-4 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isRequesting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Requesting...
+                      </span>
+                    ) : !user ? 'Sign in to Request' : 'Request Audiobook'}
+                  </button>
+                ) : (
+                  <button
+                    disabled
+                    className={`
+                      w-full py-3 px-4 rounded-xl font-semibold
+                      ${status.type === 'processing' ? 'text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' : ''}
+                      ${status.type === 'pending' ? 'text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' : ''}
+                      ${status.type === 'denied' ? 'text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-900/30' : ''}
+                    `}
+                  >
+                    {status.type === 'processing' && (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Processing
+                      </span>
+                    )}
+                    {status.type === 'pending' && status.label}
+                    {status.type === 'denied' && 'Request Denied'}
+                  </button>
                 )}
               </div>
-            </div>
 
-            {/* Description */}
-            {audiobook.description && (
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-4 sm:pt-6">
-                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2 sm:mb-3">
-                  Publisher's Summary
-                </h3>
-                <div className="text-sm sm:text-base text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-                  {audiobook.description}
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 sm:pt-6 flex flex-col sm:flex-row gap-2 sm:gap-3">
-              {(() => {
-                // Use props from card instead of fetched audiobook data for request status
-                // Check if book is already available in library or completed status
-                if (isAvailable || requestStatus === 'completed') {
-                  return (
-                    <>
-                      <div className="flex-1">
-                        <div className="w-full py-3 px-6 bg-green-50 dark:bg-green-900/20 border-2 border-green-200 dark:border-green-800 rounded-lg text-center">
-                          <span className="text-base font-semibold text-green-700 dark:text-green-400">
-                            Available in Your Library
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Ebook Buttons - Only shown when audiobook is available and ebook sources enabled */}
-                      {canShowEbookButtons && user && (
-                        <>
-                          {/* Grab Ebook Button */}
-                          <button
-                            onClick={handleFetchEbook}
-                            disabled={isFetchingEbook}
-                            className="group relative inline-flex items-center justify-center p-3 rounded-lg border-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            style={{
-                              borderColor: '#f16f19',
-                              backgroundColor: 'rgba(241, 111, 25, 0.1)',
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(241, 111, 25, 0.2)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(241, 111, 25, 0.1)';
-                            }}
-                            title="Grab Ebook"
-                            aria-label="Grab Ebook"
-                          >
-                            {isFetchingEbook ? (
-                              <div className="animate-spin w-6 h-6 border-2 border-current border-t-transparent rounded-full" style={{ color: '#f16f19' }} />
-                            ) : (
-                              <svg
-                                className="w-6 h-6"
-                                style={{ color: '#f16f19' }}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                                />
-                              </svg>
-                            )}
-                            {/* Tooltip */}
-                            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                              Grab Ebook
-                            </span>
-                          </button>
-
-                          {/* Interactive Search Ebook Button */}
-                          <button
-                            onClick={handleInteractiveSearchEbook}
-                            className="group relative inline-flex items-center justify-center p-3 rounded-lg border-2 transition-colors"
-                            style={{
-                              borderColor: '#f16f19',
-                              backgroundColor: 'rgba(241, 111, 25, 0.1)',
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(241, 111, 25, 0.2)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'rgba(241, 111, 25, 0.1)';
-                            }}
-                            title="Search Ebook Sources"
-                            aria-label="Search Ebook Sources"
-                          >
-                            <svg
-                              className="w-6 h-6"
-                              style={{ color: '#f16f19' }}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-                              />
-                            </svg>
-                            {/* Tooltip */}
-                            <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                              Search Ebook Sources
-                            </span>
-                          </button>
-                        </>
-                      )}
-
-                      {/* Show ebook request status if one exists */}
-                      {ebookStatus?.hasActiveEbookRequest && (
-                        <div
-                          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 text-sm font-medium"
-                          style={{
-                            borderColor: '#f16f19',
-                            backgroundColor: 'rgba(241, 111, 25, 0.1)',
-                            color: '#f16f19',
-                          }}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-                            />
-                          </svg>
-                          <span>
-                            Ebook: {ebookStatus.existingEbookStatus === 'awaiting_approval'
-                              ? 'Pending Approval'
-                              : ebookStatus.existingEbookStatus === 'available' || ebookStatus.existingEbookStatus === 'downloaded'
-                                ? 'Available'
-                                : 'In Progress'}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  );
-                }
-
-                // Check if book is requested and in progress
-                const inProgressStatuses = [
-                  'pending',
-                  'awaiting_search',
-                  'searching',
-                  'downloading',
-                  'processing',
-                  'downloaded',
-                  'awaiting_import',
-                  'awaiting_approval',
-                  'denied',
-                ];
-                if (
-                  isRequested &&
-                  requestStatus &&
-                  inProgressStatuses.includes(requestStatus)
-                ) {
-                  // Determine button text and styling based on status
-                  let buttonText;
-                  let buttonClass = 'w-full cursor-not-allowed opacity-75';
-
-                  if (requestStatus === 'downloaded') {
-                    buttonText = 'Processing...';
-                  } else if (requestStatus === 'awaiting_approval') {
-                    buttonText = requestedByUsername
-                      ? `Pending Approval (${requestedByUsername})`
-                      : 'Pending Approval';
-                  } else if (requestStatus === 'denied') {
-                    buttonText = 'Request Denied';
-                    buttonClass = 'w-full cursor-not-allowed opacity-75 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30';
-                  } else {
-                    buttonText = requestedByUsername
-                      ? `Requested by ${requestedByUsername}`
-                      : 'Already Requested';
-                  }
-
-                  return (
-                    <div className="flex-1">
-                      <Button
-                        onClick={() => {}}
-                        disabled={true}
-                        variant="primary"
-                        size="lg"
-                        className={buttonClass}
-                      >
-                        {buttonText}
-                      </Button>
-                    </div>
-                  );
-                }
-
-                // For failed/warn/cancelled or no request - show Request button
-                return (
-                  <div className="flex-1">
-                    <Button
-                      onClick={handleRequest}
-                      loading={isRequesting}
-                      disabled={!user}
-                      variant="primary"
-                      size="lg"
-                      className="w-full"
-                    >
-                      {!user ? 'Login to Request' : 'Request Audiobook'}
-                    </Button>
-                  </div>
-                );
-              })()}
-
-              {/* Interactive Search Button - only show if not already available */}
-              {!isAvailable && requestStatus !== 'completed' && (
+              {/* Interactive Search - only if not available */}
+              {status.type !== 'available' && (
                 <button
                   onClick={handleInteractiveSearch}
                   disabled={!user}
-                  className="group relative inline-flex items-center justify-center p-3 rounded-lg border-2 border-purple-600 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors disabled:opacity-50"
                   title="Interactive Search"
-                  aria-label="Interactive Search"
                 >
-                  <svg
-                    className="w-6 h-6 text-purple-600 dark:text-purple-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                    />
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  {/* Tooltip */}
-                  <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                    Interactive Search
-                  </span>
                 </button>
               )}
 
-              <Button onClick={onClose} variant="outline" size="lg">
-                Close
-              </Button>
+              {/* Ebook Buttons - only when available and enabled */}
+              {canShowEbookButtons && user && (
+                <>
+                  <button
+                    onClick={handleFetchEbook}
+                    disabled={isFetchingEbook}
+                    className="p-3 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors disabled:opacity-50"
+                    title="Grab Ebook"
+                  >
+                    {isFetchingEbook ? (
+                      <svg className="w-6 h-6 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setShowInteractiveSearchEbook(true)}
+                    className="p-3 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
+                    title="Search Ebook Sources"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
+          </div>
+        )}
 
-            {/* Error Message */}
-            {requestError && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                <p className="text-red-800 dark:text-red-200 text-center">{requestError}</p>
-              </div>
-            )}
-
-            {/* Success Toast */}
-            {showToast && (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                <p className="text-green-800 dark:text-green-200 text-center font-medium">
-                  ✓ {toastMessage}
-                </p>
-              </div>
-            )}
+        {/* Toast Notification */}
+        {showToast && (
+          <div className={`
+            absolute bottom-20 left-1/2 -translate-x-1/2 z-30
+            px-4 py-2.5 rounded-xl shadow-lg backdrop-blur-md
+            ${toastType === 'success' ? 'bg-emerald-500/95 text-white' : 'bg-red-500/95 text-white'}
+            animate-in fade-in slide-in-from-bottom-2 duration-200
+          `}>
+            <p className="text-sm font-medium whitespace-nowrap">{toastMessage}</p>
           </div>
         )}
       </div>
@@ -726,40 +546,49 @@ export function AudiobookDetailsModal({
   return (
     <>
       {createPortal(modalContent, document.body)}
-      {/* Interactive Search Modal (Audiobook) - render with higher z-index to appear above details modal */}
+
+      {/* Interactive Search Modal (Audiobook) */}
       {showInteractiveSearch && audiobook && createPortal(
-        <div className="fixed inset-0 z-[60]" style={{ pointerEvents: 'none' }}>
-          <div style={{ pointerEvents: 'auto' }}>
-            <InteractiveTorrentSearchModal
-              isOpen={showInteractiveSearch}
-              onClose={handleInteractiveSearchClose}
-              onSuccess={handleInteractiveSearchSuccess}
-              audiobook={{
-                title: audiobook.title,
-                author: audiobook.author,
-              }}
-              fullAudiobook={audiobook}
-            />
-          </div>
+        <div className="fixed inset-0 z-[60]">
+          <InteractiveTorrentSearchModal
+            isOpen={showInteractiveSearch}
+            onClose={() => {
+              setShowInteractiveSearch(false);
+              onClose();
+            }}
+            onSuccess={() => {
+              onRequestSuccess?.();
+            }}
+            audiobook={{
+              title: audiobook.title,
+              author: audiobook.author,
+            }}
+            fullAudiobook={audiobook}
+          />
         </div>,
         document.body
       )}
-      {/* Interactive Search Modal (Ebook) - render with higher z-index to appear above details modal */}
+
+      {/* Interactive Search Modal (Ebook) */}
       {showInteractiveSearchEbook && audiobook && createPortal(
-        <div className="fixed inset-0 z-[60]" style={{ pointerEvents: 'none' }}>
-          <div style={{ pointerEvents: 'auto' }}>
-            <InteractiveTorrentSearchModal
-              isOpen={showInteractiveSearchEbook}
-              onClose={handleInteractiveSearchEbookClose}
-              onSuccess={handleInteractiveSearchEbookSuccess}
-              asin={asin}
-              audiobook={{
-                title: audiobook.title,
-                author: audiobook.author,
-              }}
-              searchMode="ebook"
-            />
-          </div>
+        <div className="fixed inset-0 z-[60]">
+          <InteractiveTorrentSearchModal
+            isOpen={showInteractiveSearchEbook}
+            onClose={() => {
+              setShowInteractiveSearchEbook(false);
+              revalidateEbookStatus();
+            }}
+            onSuccess={() => {
+              revalidateEbookStatus();
+              showNotification('Ebook download started!');
+            }}
+            asin={asin}
+            audiobook={{
+              title: audiobook.title,
+              author: audiobook.author,
+            }}
+            searchMode="ebook"
+          />
         </div>,
         document.body
       )}

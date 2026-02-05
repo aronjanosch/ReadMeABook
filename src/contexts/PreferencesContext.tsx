@@ -23,7 +23,7 @@ const PreferencesContext = createContext<PreferencesContextType | undefined>(und
 
 const DEFAULT_PREFERENCES: Preferences = {
   cardSize: 5,
-  squareCovers: false,
+  squareCovers: true,
 };
 
 const STORAGE_KEY = 'preferences';
