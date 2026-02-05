@@ -5,6 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAudibleService } from '@/lib/integrations/audible.service';
+import { getConfigService } from '@/lib/services/config.service';
+import { AUDIBLE_REGIONS, DEFAULT_AUDIBLE_REGION, AudibleRegion } from '@/lib/types/audible';
 import { RMABLogger } from '@/lib/utils/logger';
 
 const logger = RMABLogger.create('API.Audiobooks.Details');
@@ -43,9 +45,14 @@ export async function GET(
       );
     }
 
+    const configService = getConfigService();
+    const region = (await configService.getAudibleRegion()) as AudibleRegion || DEFAULT_AUDIBLE_REGION;
+    const audibleUrl = `${AUDIBLE_REGIONS[region].baseUrl}/pd/${asin}`;
+
     return NextResponse.json({
       success: true,
       audiobook,
+      audibleUrl,
     });
   } catch (error) {
     logger.error('Failed to get audiobook details', { error: error instanceof Error ? error.message : String(error) });

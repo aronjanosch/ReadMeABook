@@ -68,7 +68,7 @@ export function AudiobookDetailsModal({
 }: AudiobookDetailsModalProps) {
   const { user } = useAuth();
   const { squareCovers } = usePreferences();
-  const { audiobook, isLoading, error } = useAudiobookDetails(isOpen ? asin : null);
+  const { audiobook, audibleUrl, isLoading, error } = useAudiobookDetails(isOpen ? asin : null);
   const { createRequest, isLoading: isRequesting } = useCreateRequest();
   const { ebookStatus, revalidate: revalidateEbookStatus } = useEbookStatus(isOpen && isAvailable ? asin : null);
   const { fetchEbook, isLoading: isFetchingEbook } = useFetchEbookByAsin();
@@ -387,7 +387,7 @@ export function AudiobookDetailsModal({
                   <div>
                     <p className="text-gray-500 dark:text-gray-400">Source</p>
                     <a
-                      href={`https://www.audible.com/pd/${asin}`}
+                      href={audibleUrl || `https://www.audible.com/pd/${asin}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400 hover:underline"

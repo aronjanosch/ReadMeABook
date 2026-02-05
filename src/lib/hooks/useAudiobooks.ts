@@ -80,6 +80,7 @@ export function useAudiobookDetails(asin: string | null) {
 
   return {
     audiobook: data?.audiobook || null,
+    audibleUrl: data?.audibleUrl || null,
     isLoading,
     error,
   };
