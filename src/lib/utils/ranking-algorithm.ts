@@ -369,9 +369,9 @@ export class RankingAlgorithm {
     // Then normalize individual authors for matching
     const requestAuthorRaw = audiobook.author.toLowerCase().replace(/\s+/g, ' ').trim();
     const parsedAuthors = requestAuthorRaw
-      .split(/,|&| and | - /)
+      .split(/,|&| and | und | - /)
       .map(a => a.trim())
-      .filter(a => a.length > 2 && !['translator', 'narrator'].includes(a));
+      .filter(a => a.length > 2 && !['translator', 'narrator', 'übersetzer', 'sprecher', 'erzähler', 'herausgeber'].includes(a));
 
     // Normalize parsed authors for matching (handles CamelCase in author names)
     const normalizedAuthors = parsedAuthors.map(a => this.normalizeForMatching(a));
@@ -380,7 +380,8 @@ export class RankingAlgorithm {
 
     // ========== STAGE 1: WORD COVERAGE FILTER (MANDATORY) ==========
     // Extract significant words (filter out common stop words)
-    const stopWords = ['the', 'a', 'an', 'of', 'on', 'in', 'at', 'by', 'for'];
+    const stopWords = ['the', 'a', 'an', 'of', 'on', 'in', 'at', 'by', 'for',
+      'der', 'die', 'das', 'ein', 'eine', 'und', 'von', 'für', 'im', 'am', 'den', 'dem', 'des', 'zur', 'zum'];
 
     const extractWords = (text: string, stopList: string[]): string[] => {
       return text
@@ -490,7 +491,7 @@ export class RankingAlgorithm {
         // 1. Acceptable prefix (no words, OR structured metadata like "Author - Series - ")
         // 2. Followed by clear metadata markers (not "'s Secret" or " Is Watching")
         // Check ORIGINAL title for metadata markers ([ ] ( ) etc. not normalized away)
-        const metadataMarkers = [' by ', ' - ', ' [', ' (', ' {', ' :', ','];
+        const metadataMarkers = [' by ', ' von ', ' - ', ' [', ' (', ' {', ' :', ','];
 
         // Check if afterTitle starts with any author name (handles space-separated format like "Title Author Year")
         const afterStartsWithAuthor = normalizedAuthors.some(author =>
@@ -639,9 +640,9 @@ export class RankingAlgorithm {
   private checkAuthorPresence(torrentTitle: string, requestAuthor: string): boolean {
     // Parse multiple authors (same logic as Stage 3 author matching)
     const authors = requestAuthor
-      .split(/,|&| and | - /)
+      .split(/,|&| and | und | - /)
       .map(a => a.trim())
-      .filter(a => a.length > 2 && !['translator', 'narrator'].includes(a));
+      .filter(a => a.length > 2 && !['translator', 'narrator', 'übersetzer', 'sprecher', 'erzähler', 'herausgeber'].includes(a));
 
     // Normalize each author for matching
     const normalizedAuthors = authors.map(a => this.normalizeForMatching(a));
