@@ -54,6 +54,15 @@ services:
       # POSTGRES_PASSWORD: "your-custom-postgres-password-here"
 
       # ========================================================================
+      # OPTIONAL: Rootless Podman Support
+      # ========================================================================
+      # Set to "true" ONLY if running with rootless Podman.
+      # This skips gosu UID/GID switching since the user namespace already
+      # handles mapping. Do NOT enable for Docker or LXC - it will cause
+      # files to be created as root.
+      # ROOTLESS_CONTAINER: "true"
+
+      # ========================================================================
       # OPTIONAL: Application Configuration
       # ========================================================================
       # Only set these if you need non-default values:

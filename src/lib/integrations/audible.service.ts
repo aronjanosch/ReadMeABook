@@ -91,6 +91,7 @@ export class AudibleService {
         },
         params: {
           ipRedirectOverride: 'true', // Prevent IP-based region redirects
+          language: 'english', // Force English locale (prevents IP-based language serving for non-English IPs)
         },
       });
 
@@ -110,6 +111,7 @@ export class AudibleService {
         },
         params: {
           ipRedirectOverride: 'true',
+          language: 'english',
         },
       });
       this.initialized = true;
